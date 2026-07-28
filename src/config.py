@@ -1,4 +1,4 @@
-"""Configuration — everything in config.toml at project root.
+"""Configuration — single config.toml at project root.
 
 config.toml — all settings + secrets (gitignored)
 config.toml.example — template committed to git
@@ -16,11 +16,7 @@ class Config(BaseModel):
     flomo_token: str = ""
     weread_key: str = ""
     db_path: str = ""
-    embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
-    cluster_min_size: int = 5
 
-
-# ── Project root ─────────────────────────────────────────────────────────────
 
 _root: Path | None = None
 
@@ -44,52 +40,33 @@ def data_dir() -> Path:
     return d
 
 
-# ── Load / Save ──────────────────────────────────────────────────────────────
-
 _config: Config | None = None
-
-
-def _config_path() -> Path:
-    return project_root() / "config.toml"
 
 
 def load_config() -> Config:
     global _config
     if _config is not None:
         return _config
-
     import tomllib
 
-    p = _config_path()
+    p = project_root() / "config.toml"
     if not p.exists():
         _config = Config(db_path=str(data_dir() / "flomo.db"))
         return _config
-
     d = tomllib.loads(p.read_text())
     _config = Config(
         flomo_token=d.get("flomo_token", ""),
         weread_key=d.get("weread_key", ""),
         db_path=d.get("db_path", str(data_dir() / "flomo.db")),
-        embedding_model=d.get("embedding_model", "paraphrase-multilingual-MiniLM-L12-v2"),
-        cluster_min_size=d.get("cluster_min_size", 5),
     )
     return _config
 
 
 def save_config(cfg: Config) -> None:
-    raw = {
-        "flomo_token": cfg.flomo_token,
-        "weread_key": cfg.weread_key,
-        "db_path": cfg.db_path,
-        "embedding_model": cfg.embedding_model,
-        "cluster_min_size": cfg.cluster_min_size,
-    }
-    _config_path().write_text(tomli_w.dumps(raw))
+    raw = {"flomo_token": cfg.flomo_token, "weread_key": cfg.weread_key, "db_path": cfg.db_path}
+    (project_root() / "config.toml").write_text(tomli_w.dumps(raw))
     global _config
     _config = cfg
-
-
-# ── Convenience accessors ────────────────────────────────────────────────────
 
 
 def require_token() -> str:

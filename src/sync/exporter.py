@@ -135,14 +135,12 @@ def _upsert_memo(conn: Any, memo: dict[str, Any]) -> None:
     if existing:
         if existing["updated_at"] == updated_at:
             return  # unchanged
-        dirty = 1 if existing["content"] != content else 1
         conn.execute(
             """UPDATE memos SET content=?, raw_content=?, source=?, updated_at=?,
-               embedding_dirty=?, synced_at=datetime('now')
+               synced_at=datetime('now')
                WHERE slug=?""",
-            (content, raw, source, updated_at, dirty, slug),
+            (content, raw, source, updated_at, slug),
         )
-        # Clean old tags and re-insert
         conn.execute("DELETE FROM memo_tags WHERE memo_slug = ?", (slug,))
     else:
         conn.execute(

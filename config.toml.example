@@ -2,17 +2,11 @@
 # Copy this file to config.toml and fill in your tokens:
 #   cp config.toml.example config.toml
 
-# flomo API token — Chrome → F12 → Network → /api/ → Authorization → value after "Bearer "
+# flomo API token — Chrome F12 → Network → /api/ → Authorization → value after "Bearer "
 flomo_token = ""
 
 # WeRead Skills API key — https://weread.qq.com/r/weread-skills (optional)
 weread_key = ""
 
-# Database path (default: data/flomo.db)
+# Database path
 db_path = "data/flomo.db"
-
-# Embedding model for semantic analysis
-embedding_model = "paraphrase-multilingual-MiniLM-L12-v2"
-
-# Minimum cluster size for topic grouping
-cluster_min_size = 5

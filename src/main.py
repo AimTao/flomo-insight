@@ -80,8 +80,6 @@ def config_show():
     table.add_row("Token", _mask_token(cfg.flomo_token))
     table.add_row("WeRead Key", _mask_token(cfg.weread_key))
     table.add_row("DB Path", cfg.db_path)
-    table.add_row("Embedding Model", cfg.embedding_model)
-    table.add_row("Cluster Min Size", str(cfg.cluster_min_size))
     console.print(table)
 
 
@@ -400,68 +398,6 @@ def stats_cmd(
 
     _format_output(stats, fmt, build_table)
     conn.close()
-
-
-# ── analyze ──────────────────────────────────────────────────────────────────
-
-
-@app.command(name="analyze")
-def analyze_cmd(
-    force: bool = typer.Option(
-        False, "--force", help="Recompute all embeddings from scratch"
-    ),
-    cluster_min_size: int = typer.Option(
-        5, "--min-cluster", help="Minimum cluster size for HDBSCAN"
-    ),
-):
-    """Run the analysis pipeline: embeddings → clustering → trends → keywords.
-
-    This is the prerequisite for insight generation. Run after syncing new data.
-    """
-    import warnings
-
-    warnings.filterwarnings("ignore", category=FutureWarning)
-    warnings.filterwarnings("ignore", category=UserWarning)
-
-    db = _get_db()
-    conn = db.get_connection()
-    db.migrate(conn)
-
-    cfg = load_config()
-
-    console.print("[cyan]Step 1/4: Computing embeddings...[/cyan]")
-    from src.analysis.embeddings import compute_embeddings
-
-    embedded = compute_embeddings(
-        conn, model_name=cfg.embedding_model, force=force
-    )
-    console.print(f"  [green]Embeddings: {embedded} memos processed[/green]")
-
-    console.print("[cyan]Step 2/4: Clustering...[/cyan]")
-    from src.analysis.clustering import cluster_memos
-    from src.analysis.keywords import extract_keywords_per_cluster
-
-    n_clusters = cluster_memos(conn, min_cluster_size=cluster_min_size)
-    console.print(f"  [green]Clusters: {n_clusters} found[/green]")
-    extract_keywords_per_cluster(conn)
-
-    console.print("[cyan]Step 3/4: Computing trends...[/cyan]")
-    from src.analysis.trends import compute_trends
-
-    compute_trends(conn)
-    console.print(f"  [green]Trends: computed for {n_clusters} clusters[/green]")
-
-    console.print("[cyan]Step 4/4: Tag co-occurrence...[/cyan]")
-    from src.analysis.cooccurrence import compute_cooccurrence
-
-    edge_count = compute_cooccurrence(conn)
-    console.print(f"  [green]Co-occurrence: {edge_count} tag pair edges[/green]")
-
-    conn.close()
-    console.print("\n[bold green]✓ Analysis complete![/bold green]")
-    console.print(
-        "[dim]Insights are available via MCP — use Claude Code to explore.[/dim]"
-    )
 
 
 # ── perspectives ────────────────────────────────────────────────────────────

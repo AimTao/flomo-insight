@@ -1,7 +1,7 @@
 [project]
 name = "flomo-insight"
 version = "0.1.0"
-description = "AI-powered analysis and insight engine for flomo notes"
+description = "AI-powered insight engine for flomo notes — all LLM-driven, no clustering"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "AimTao", email = "net@aimto.net" }]
@@ -12,11 +12,6 @@ dependencies = [
     "rich>=13.9",
     "httpx>=0.28",
     "fastmcp>=2.0",
-    "sentence-transformers>=3.0",
-    "scikit-learn>=1.5",
-    "hdbscan>=0.8",
-    "umap-learn>=0.5",
-    "jieba>=0.42",
     "tomli-w>=1.0",
     "pydantic>=2.0",
 ]
