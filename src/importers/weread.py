@@ -60,7 +60,8 @@ class WereadClient:
         }
         if params:
             body.update(params)
-        resp = self._client.post("", json=body)
+        # POST to the gateway URL without trailing slash (D1-style gateway rejects "/")
+        resp = self._client.post(GATEWAY_URL, json=body)
         resp.raise_for_status()
         return resp.json()
 
