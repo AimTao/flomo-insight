@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "flomo": {
+      "command": "uv",
+      "args": ["run", "flomo", "mcp"]
+    }
+  }
+}
