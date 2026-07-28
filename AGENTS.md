@@ -72,7 +72,9 @@ flomo insight topics         # 或 connections / cbt / inversion 等
 ```
 
 ### 备份到 D1
+→ 参考 `.claude/skills/backup.md`
 ```
+flomo sync                   # 先同步
 flomo backup                 # 增量推送至 Cloudflare D1
 ```
 

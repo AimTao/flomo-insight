@@ -80,13 +80,27 @@ def sync(client: FlomoClient, db: DatabaseManager, full: bool = False, show_prog
                     break
 
                 for memo in memos:
+                    # Skip trashed memos (flomo returns them with null content)
+                    if not memo.get("content"):
+                        continue
                     _upsert_memo(conn, memo)
 
                 page += 1
                 progress.update(task, completed=result.total)
 
                 # Always advance cursor from the last memo of this page
+                # (use the last memo with content to avoid cursor getting stuck
+                #  on trashed/empty entries)
                 last = memos[-1]
+                if not last.get("content"):
+                    # Find the last memo that has content
+                    last_with_content = None
+                    for m in reversed(memos):
+                        if m.get("content"):
+                            last_with_content = m
+                            break
+                    if last_with_content:
+                        last = last_with_content
                 latest_slug = last.get("slug")
                 latest_updated_at = str(last.get("updated_at", ""))
                 _update_sync_state(conn, latest_slug, latest_updated_at)
