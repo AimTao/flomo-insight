@@ -95,8 +95,9 @@ def flomo_create(
     """
     from flomo_insight.api.client import FlomoClient
 
-    with FlomoClient(require_token()) as client:
+                    with FlomoClient(require_token()) as client:
         result = client.create_memo(content, tags=tags, source=source)
+        slug = result.get("data", {}).get("slug", "")
         slug = result.get("data", {}).get("slug", "")
         return {
             "slug": slug,
@@ -120,7 +121,7 @@ def flomo_sync(full: bool = False) -> dict:
     from flomo_insight.api.client import FlomoClient
 
     db = _get_db()
-    with FlomoClient(require_token()) as client:
+            with FlomoClient(require_token()) as client:
         result = sync(client, db, full=full, show_progress=False)
 
     return {

@@ -120,7 +120,8 @@ def require_token() -> str:
             "No flomo token configured.\n"
             "Edit ~/.local/share/flomo-insight/.secrets :\n"
             '  flomo_token = "xxx"\n'
-            "Get it from: Chrome → F12 → Application → Cookies → flomoapp.com → token"
+            "Get it from: Chrome → F12 → Network → any /api/ request → Authorization header\n"
+            "(the value after 'Bearer ')"
         )
     return token
 

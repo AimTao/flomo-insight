@@ -25,7 +25,7 @@ class FlomoClient:
             base_url=BASE_URL,
             timeout=TIMEOUT,
             headers={
-                "authorization": token,
+                "authorization": f"Bearer {token}",
                 "user-agent": (
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "

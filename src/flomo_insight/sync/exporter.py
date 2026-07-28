@@ -93,8 +93,8 @@ def sync(client: FlomoClient, db: DatabaseManager, full: bool = False, show_prog
                 # Update sync state after each page for resilience
                 _update_sync_state(conn, latest_slug, latest_updated_at)
 
-                # Small delay to be gentle on the API
-                time.sleep(0.2)
+                # Rate limiting — 1-1.5s between API calls to avoid limits
+                time.sleep(1.0 + 0.5 * (page % 3 == 0))
 
         # Final sync state
         total_after = conn.execute("SELECT COUNT(*) FROM memos").fetchone()[0]
@@ -167,7 +167,16 @@ def _parse_tags_from_memo(memo: dict[str, Any]) -> list[str]:
     """Extract tag names from a memo's tag list or from content."""
     tags = memo.get("tags", [])
     if tags:
-        return [t.get("name", "") for t in tags if t.get("name")]
+        result = []
+        for t in tags:
+            if isinstance(t, dict):
+                name = t.get("name", "")
+                if name:
+                    result.append(name)
+            elif isinstance(t, str):
+                result.append(t)
+        if result:
+            return result
 
     # Fallback: parse #tags from content
     content = memo.get("content", "")

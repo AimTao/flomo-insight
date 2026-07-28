@@ -35,10 +35,10 @@ def build_memo_params(
     params: dict[str, str] = {
         "limit": str(limit),
         "tz": "8:0",
-        "timestamp": str(int(time.time() * 1000)),
+        "timestamp": str(int(time.time())),
         "api_key": "flomo_web",
-        "app_version": "5.25.64",
-        "platform": "mac",
+        "app_version": "4.0",
+        "platform": "web",
         "webp": "1",
     }
     if latest_slug:
