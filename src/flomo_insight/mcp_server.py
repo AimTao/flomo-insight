@@ -175,7 +175,7 @@ def flomo_insight(insight_type: str = "topics") -> str:
     """Generate an AI insight from analyzed flomo data.
 
     Args:
-        insight_type: One of 'topics', 'stagnant', 'declining', 'connections', 'draft'
+        insight_type: Statistical insight type:
             - topics: What topics you think about most
             - stagnant: Ideas that appear repeatedly but may lack follow-through
             - declining: Topics losing interest over time
@@ -190,6 +190,46 @@ def flomo_insight(insight_type: str = "topics") -> str:
 
     try:
         return generate_insight(conn, insight_type=insight_type)
+    finally:
+        conn.close()
+
+
+@mcp.tool()
+def flomo_perspectives() -> list[dict]:
+    """List all available LLM-driven insight perspectives. Each perspective applies a
+    specific thinking lens (e.g. CBT therapy, inversion, value clarification) to your notes.
+
+    Returns a list with key, title, author, and description for each perspective.
+    Use flomo_perspective with a chosen key to generate the full prompt + notes.
+    """
+    from flomo_insight.insight.templates import list_perspectives
+    return list_perspectives()
+
+
+@mcp.tool()
+def flomo_perspective(lens: str = "default") -> str:
+    """Fetch your notes wrapped with a specific thinking perspective prompt.
+
+    This tool retrieves recent and representative notes from your database,
+    packages them with a system prompt that applies the chosen thinking lens,
+    and returns the result for Claude Code to interpret.
+
+    Args:
+        lens: The perspective key. Call flomo_perspectives first to see options.
+            Available: default, value-clarification, inversion, second-order,
+            cbt, mbti
+
+    Returns markdown: perspective system prompt + cluster summary + note contents.
+    You (Claude) should read this and generate the insight analysis.
+    """
+    from flomo_insight.insight.engine import generate_insight
+
+    db = _get_db()
+    conn = db.get_connection()
+    db.migrate(conn)
+
+    try:
+        return generate_insight(conn, insight_type="perspective", lens=lens)
     finally:
         conn.close()
 

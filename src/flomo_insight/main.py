@@ -327,10 +327,27 @@ def analyze_cmd(
 
 @app.command(name="insight")
 def insight_cmd(
-    type: str = typer.Option("topics", "--type", "-t", help="Insight type: topics, stagnant, declining, connections, draft"),
+    type: str = typer.Option("topics", "--type", "-t", help="topics|stagnant|declining|connections|draft|perspective"),
+    lens: Optional[str] = typer.Option(None, "--lens", "-l", help="Perspective lens for --type perspective (e.g. cbt, inversion)"),
     fmt: str = typer.Option("md", "--format", "-f", help="Output: md, json"),
 ):
-    """Generate AI insights from your flomo data."""
+    """Generate AI insights from your flomo data.
+
+    Statistical types (template-based, no LLM):
+      topics      — What you think about most
+      stagnant    — Ideas that appear repeatedly without follow-through
+      declining   — Topics losing interest over time
+      connections — Hidden tag connections
+      draft       — Writing draft from clustered notes
+
+    Perspective types (LLM-driven, fetches notes + system prompt):
+      perspective --lens default         — Core themes, contradictions, blind spots
+      perspective --lens value-clarification — What you truly value
+      perspective --lens inversion       — Munger-style reverse thinking
+      perspective --lens second-order    — Problems above problems
+      perspective --lens cbt             — Cognitive distortion detection
+      perspective --lens mbti            — Personality type from your notes
+    """
     from flomo_insight.insight.engine import generate_insight
 
     db = _get_db()
@@ -338,11 +355,20 @@ def insight_cmd(
     db.migrate(conn)
 
     try:
-        result = generate_insight(conn, insight_type=type)
-        if fmt == "json":
-            console.print(json.dumps({"type": type, "content": result}, ensure_ascii=False, indent=2))
+        if type == "perspective":
+            if not lens:
+                console.print("[yellow]Please specify a lens, e.g. --lens cbt[/yellow]")
+                console.print("[dim]Run 'flomo perspectives' to see all options.[/dim]")
+                raise typer.Exit(1)
+            result = generate_insight(conn, insight_type="perspective", lens=lens)
         else:
-            console.print(f"[bold]Insight: {type}[/bold]\n")
+            result = generate_insight(conn, insight_type=type)
+
+        if fmt == "json":
+            console.print(json.dumps({"type": type, "lens": lens, "content": result}, ensure_ascii=False, indent=2))
+        else:
+            label = f"{type}" + (f" ({lens})" if lens else "")
+            console.print(f"[bold]Insight: {label}[/bold]\n")
             console.print(result)
     except ValueError as e:
         console.print(f"[red]{e}[/red]")
@@ -350,6 +376,27 @@ def insight_cmd(
         raise typer.Exit(1)
     finally:
         conn.close()
+
+
+# ── perspectives ────────────────────────────────────────────────────────────
+
+
+@app.command(name="perspectives")
+def perspectives_cmd():
+    """List all available LLM-driven insight perspectives."""
+    from flomo_insight.insight.templates import list_perspectives
+    from rich.table import Table
+
+    ps = list_perspectives()
+    t = Table(title="Available Perspectives (LLM-driven)")
+    t.add_column("Key", style="cyan")
+    t.add_column("Title", style="bold")
+    t.add_column("Author", style="dim")
+    t.add_column("Description")
+    for p in ps:
+        t.add_row(p["key"], p["title"], p["author"], p["description"])
+    console.print(t)
+    console.print("\n[dim]Use with: flomo insight --type perspective --lens <key>[/dim]")
 
 
 # ── mcp ──────────────────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
-"""Insight generation engine — data-derived, template-based.
+"""Insight generation engine — data-derived, template-based + LLM perspectives.
 
-All insights are produced by querying pre-computed analysis tables and applying
-rule-based statistical templates. No LLM calls — fast, deterministic, free.
-Output is concise markdown (100-400 tokens) designed for Claude Code consumption.
+Statistical insights (topics/stagnant/declining/connections/draft) are template-based.
+Perspective insights (default/value-clarification/inversion/cbt/mbti/second-order)
+fetch notes and wrap them with a system prompt for Claude Code to interpret.
 """
 
 from __future__ import annotations
@@ -11,20 +11,36 @@ import json
 import sqlite3
 
 
-def generate_insight(conn: sqlite3.Connection, insight_type: str) -> str:
-    """Generate an insight of the specified type. Raises ValueError if data missing."""
-    generators = {
+def generate_insight(conn: sqlite3.Connection, insight_type: str, **kwargs) -> str:
+    """Generate an insight of the specified type. Raises ValueError if data missing.
+
+    Statistical types: topics, stagnant, declining, connections, draft
+    Perspective types: perspective (requires lens param, e.g. lens="cbt")
+    """
+    statistical = {
         "topics": _insight_topics,
         "stagnant": _insight_stagnant,
         "declining": _insight_declining,
         "connections": _insight_connections,
         "draft": _insight_draft,
     }
-    if insight_type not in generators:
-        valid = ", ".join(generators.keys())
-        raise ValueError(f"Unknown insight type: {insight_type}. Valid: {valid}")
 
-    return generators[insight_type](conn)
+    if insight_type in statistical:
+        return statistical[insight_type](conn)
+
+    if insight_type == "perspective":
+        lens = kwargs.get("lens", "default")
+        return _insight_perspective(conn, lens)
+
+    valid = ", ".join(list(statistical.keys()) + ["perspective"])
+    raise ValueError(f"Unknown insight type: {insight_type}. Valid: {valid}")
+
+
+def _insight_perspective(conn: sqlite3.Connection, lens: str) -> str:
+    """Fetch notes and wrap with a perspective prompt for LLM analysis."""
+    from flomo_insight.insight.templates import fetch_notes_for_perspective
+
+    return fetch_notes_for_perspective(conn, lens)
 
 
 def _insight_topics(conn: sqlite3.Connection) -> str:
