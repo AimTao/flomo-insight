@@ -42,8 +42,8 @@ CLI (Typer)          MCP Server (FastMCP)
 - **WeRead import uses the official Skills API**: API key from
   https://weread.qq.com/r/weread-skills (format `wrk-xxxxxxxx`).
   Authenticated via `Authorization: Bearer wrk-xxx` header.
-- **Tokens/cookies are stored separately**: `~/.local/share/flomo-insight/.token`
-  and `.weread_cookie`, both 0600. Never in config.toml, never in git.
+- **All secrets in one file**: `~/.local/share/flomo-insight/.secrets` (0600 TOML).
+  Contains `flomo_token` and `weread_key`. Never in git.
 - **All user data is outside the repo**: Database, tokens, cookies, and config
   all live under `~/.local/share/flomo-insight/` and `~/.config/flomo-insight/`.
 - **Tests use synthetic data only**: No real flomo or weread data in test fixtures.
@@ -52,8 +52,9 @@ CLI (Typer)          MCP Server (FastMCP)
 
 ```bash
 uv sync
-flomo config set-token YOUR_FLOMO_TOKEN         # Chrome DevTools → Cookies → flomoapp.com → token
-flomo config set-weread-key wrk-xxxxxxxx          # https://weread.qq.com/r/weread-skills
+# Edit ~/.local/share/flomo-insight/.secrets :
+#   flomo_token = "xxx"
+#   weread_key = "wrk-xxx"
 flomo sync                                       # pull all flomo notes
 flomo analyze                                    # embeddings + clustering + trends
 ```
@@ -115,11 +116,14 @@ Auth: `Authorization: Bearer wrk-xxxxxxxx`
 This project is designed to be open-source. All user-specific data lives
 outside the repo. Here's what you must protect:
 
-### Secrets (0600 files under ~/.local)
-- `.token` — flomo API token (from browser cookies)
-- `.weread_key` — WeRead Skills API key (format `wrk-xxx`)
+### Secrets (single file, 0600)
+- `.secrets` — `~/.local/share/flomo-insight/.secrets` — TOML format:
+  ```toml
+  flomo_token = "xxx"
+  weread_key = "wrk-xxx"
+  ```
 
-These NEVER appear in:
+This file NEVER appears in:
 - `pyproject.toml` or any source file
 - `config.toml` (TOML config only stores non-secret settings)
 - Environment variables checked into the repo
@@ -134,8 +138,7 @@ These NEVER appear in:
 The `.gitignore` blocks:
 ```
 *.db *.sqlite *.sqlite3    # all databases
-.token *.token             # all auth tokens
-.weread_key               # WeRead API key
+.secrets                   # all auth tokens
 ```
 
 ### Before committing, always verify
@@ -158,7 +161,6 @@ or get a new flomo token from browser).
 |------|-------|---------|
 | Source code | `src/flomo_insight/` | ✅ |
 | Config | `~/.config/flomo-insight/config.toml` | ❌ |
-| Flomo token | `~/.local/share/flomo-insight/.token` | ❌ |
-| WeRead key | `~/.local/share/flomo-insight/.weread_key` | ❌ |
+| Flomo + WeRead secrets | `~/.local/share/flomo-insight/.secrets` | ❌ |
 | Database | `~/.local/share/flomo-insight/flomo.db` | ❌ |
 | Test data | `tests/fixtures/` (synthetic only) | ✅ |

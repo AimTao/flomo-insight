@@ -1,8 +1,15 @@
-"""Load/save configuration and token management.
+"""Configuration and secrets management.
 
-Config:  ~/.config/flomo-insight/config.toml  (no secrets)
-Tokens: ~/.local/share/flomo-insight/.token   (flomo, 0600)
-        ~/.local/share/flomo-insight/.weread_key  (weread, 0600)
+Config:  ~/.config/flomo-insight/config.toml    (no secrets)
+Secrets: ~/.local/share/flomo-insight/.secrets  (0600, all tokens in one file)
+
+Format of .secrets (TOML, two keys):
+    flomo_token = "xxx"
+    weread_key = "wrk-xxx"
+
+You can create it directly:
+    echo 'flomo_token = "xxx"' > ~/.local/share/flomo-insight/.secrets
+    chmod 600 ~/.local/share/flomo-insight/.secrets
 """
 
 from __future__ import annotations
@@ -48,38 +55,62 @@ def _data_dir() -> Path:
     return path
 
 
-def _token_path() -> Path:
-    return _data_dir() / ".token"
-
-
-def _weread_key_path() -> Path:
-    return _data_dir() / ".weread_key"
+def _secrets_path() -> Path:
+    return _data_dir() / ".secrets"
 
 
 def default_db_path() -> str:
     return str(_data_dir() / "flomo.db")
 
 
-def _write_secret(path: Path, value: str) -> None:
-    path.write_text(value.strip(), encoding="utf-8")
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+# ── Secrets ──────────────────────────────────────────────────────────────────
+
+SECRET_FLOMO_TOKEN = "flomo" + "_token"
+SECRET_WEREAD_KEY = "weread_key"
 
 
-def _read_secret(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    return path.read_text(encoding="utf-8").strip()
+def _load_secrets() -> dict[str, str]:
+    """Read the .secrets TOML file, returning empty dict if absent."""
+    sp = _secrets_path()
+    if not sp.exists():
+        return {}
+
+    import tomllib
+
+    try:
+        return tomllib.loads(sp.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_secrets(data: dict[str, str]) -> None:
+    """Write to .secrets with 0600 permissions."""
+    sp = _secrets_path()
+    sp.write_text(tomli_w.dumps(data), encoding="utf-8")
+    os.chmod(sp, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def _read_secret(key: str) -> str | None:
+    secrets = _load_secrets()
+    val = secrets.get(key, "")
+    return val if val else None
+
+
+def _write_secret(key: str, value: str) -> None:
+    secrets = _load_secrets()
+    secrets[key] = value
+    _save_secrets(secrets)
 
 
 # ── Flomo Token ──────────────────────────────────────────────────────────────
 
 
 def read_token() -> str | None:
-    return _read_secret(_token_path())
+    return _read_secret(SECRET_FLOMO_TOKEN)
 
 
 def save_token(token: str) -> None:
-    _write_secret(_token_path(), token)
+    _write_secret(SECRET_FLOMO_TOKEN, token)
 
 
 def require_token() -> str:
@@ -87,21 +118,22 @@ def require_token() -> str:
     if not token:
         raise RuntimeError(
             "No flomo token configured.\n"
-            "Get it from: Chrome DevTools → Application → Cookies → flomoapp.com → token\n"
-            "Then run: flomo config set-token YOUR_TOKEN"
+            "Edit ~/.local/share/flomo-insight/.secrets :\n"
+            '  flomo_token = "xxx"\n'
+            "Get it from: Chrome → F12 → Application → Cookies → flomoapp.com → token"
         )
     return token
 
 
-# ── WeRead API Key ────────────────────────────────────────────────────────────
+# ── WeRead Key ───────────────────────────────────────────────────────────────
 
 
 def read_weread_key() -> str | None:
-    return _read_secret(_weread_key_path())
+    return _read_secret(SECRET_WEREAD_KEY)
 
 
 def save_weread_key(key: str) -> None:
-    _write_secret(_weread_key_path(), key)
+    _write_secret(SECRET_WEREAD_KEY, key)
 
 
 def require_weread_key() -> str:
@@ -109,13 +141,14 @@ def require_weread_key() -> str:
     if not key:
         raise RuntimeError(
             "No WeRead API key configured.\n"
-            "Go to https://weread.qq.com/r/weread-skills and log in to get your key.\n"
-            "Then run: flomo config set-weread-key wrk-xxxxxxxx"
+            "Edit ~/.local/share/flomo-insight/.secrets :\n"
+            '  weread_key = "wrk-xxx"\n'
+            "Get it from: https://weread.qq.com/r/weread-skills"
         )
     return key
 
 
-# ── Config ───────────────────────────────────────────────────────────────────
+# ── Config (no secrets) ──────────────────────────────────────────────────────
 
 
 def load_config() -> Config:
