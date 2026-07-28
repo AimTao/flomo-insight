@@ -161,6 +161,7 @@ or get a new flomo token from browser).
 |------|-------|---------|
 | Source code | `src/flomo_insight/` | ✅ |
 | Config | `~/.config/flomo-insight/config.toml` | ❌ |
-| Flomo + WeRead secrets | `~/.local/share/flomo-insight/.secrets` | ❌ |
+| Flomo token | `~/.local/share/flomo-insight/.secrets` (`flomo_token`) | ❌ |
+| WeRead key | `~/.local/share/flomo-insight/.secrets` (`weread_key`) | ❌ |
 | Database | `~/.local/share/flomo-insight/flomo.db` | ❌ |
 | Test data | `tests/fixtures/` (synthetic only) | ✅ |

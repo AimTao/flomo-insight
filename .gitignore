@@ -16,12 +16,10 @@ build/
 .DS_Store
 Thumbs.db
 
-# User data — NEVER commit these
+# Secrets & user data — NEVER commit
+.env
+data/
 *.db
 *.sqlite
 *.sqlite3
-.secrets
-
-# Test outputs
-tests/output/
-tests/fixtures/*.db
+config.toml
