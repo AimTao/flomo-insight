@@ -81,17 +81,15 @@ def sync(client: FlomoClient, db: DatabaseManager, full: bool = False, show_prog
                 page += 1
                 progress.update(task, completed=result.total)
 
-                # If fewer than limit, we've reached the end
-                if len(memos) < 200:
-                    break
-
-                # Set cursor for next page
+                # Always advance cursor from the last memo of this page
                 last = memos[-1]
                 latest_slug = last.get("slug")
                 latest_updated_at = str(last.get("updated_at", ""))
-
-                # Update sync state after each page for resilience
                 _update_sync_state(conn, latest_slug, latest_updated_at)
+
+                # If fewer than limit, we've reached the end
+                if len(memos) < 200:
+                    break
 
                 # Rate limiting — 1-1.5s between API calls to avoid limits
                 time.sleep(1.0 + 0.5 * (page % 3 == 0))
@@ -179,7 +177,9 @@ def _parse_tags_from_memo(memo: dict[str, Any]) -> list[str]:
     # Fallback: parse #tags from content
     content = memo.get("content", "")
     import re
-    return re.findall(r"#(\S+)", content)
+    raw_tags = re.findall(r"#([^\s<#]+)", content)
+    # strip trailing punctuation/HTML that may cling to the tag
+    return [t.rstrip("</p>.,;:!?，。；：！？") for t in raw_tags if t]
 
 
 def _ts_to_iso(ts: Any) -> str:

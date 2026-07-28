@@ -63,10 +63,11 @@ CREATE TABLE IF NOT EXISTS weread_imports (
     flomo_slug TEXT
 );
 
--- FTS5 full-text search
+-- FTS5 full-text search (external content table — reads from memos)
 CREATE VIRTUAL TABLE IF NOT EXISTS memos_fts USING fts5(
     content,
     source,
+    content='memos',
     content_rowid='rowid',
     tokenize='unicode61 remove_diacritics 2'
 );
