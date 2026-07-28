@@ -16,6 +16,9 @@ class Config(BaseModel):
     flomo_token: str = ""
     weread_key: str = ""
     db_path: str = ""
+    d1_account_id: str = ""
+    d1_database_id: str = ""
+    d1_api_token: str = ""
 
 
 _root: Path | None = None
@@ -58,15 +61,35 @@ def load_config() -> Config:
         flomo_token=d.get("flomo_token", ""),
         weread_key=d.get("weread_key", ""),
         db_path=d.get("db_path", str(data_dir() / "flomo.db")),
+        d1_account_id=d.get("d1_account_id", ""),
+        d1_database_id=d.get("d1_database_id", ""),
+        d1_api_token=d.get("d1_api_token", ""),
     )
     return _config
 
 
 def save_config(cfg: Config) -> None:
-    raw = {"flomo_token": cfg.flomo_token, "weread_key": cfg.weread_key, "db_path": cfg.db_path}
+    raw = {
+        "flomo_token": cfg.flomo_token,
+        "weread_key": cfg.weread_key,
+        "db_path": cfg.db_path,
+        "d1_account_id": cfg.d1_account_id,
+        "d1_database_id": cfg.d1_database_id,
+        "d1_api_token": cfg.d1_api_token,
+    }
     (project_root() / "config.toml").write_text(tomli_w.dumps(raw))
     global _config
     _config = cfg
+
+
+def require_d1_config() -> tuple[str, str, str]:
+    """Return (account_id, database_id, api_token) or raise."""
+    cfg = load_config()
+    if not (cfg.d1_account_id and cfg.d1_database_id and cfg.d1_api_token):
+        raise RuntimeError(
+            "D1 backup not configured. Set d1_account_id, d1_database_id, d1_api_token in config.toml"
+        )
+    return cfg.d1_account_id, cfg.d1_database_id, cfg.d1_api_token
 
 
 def require_token() -> str:

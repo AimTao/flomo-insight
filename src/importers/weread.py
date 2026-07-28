@@ -239,6 +239,64 @@ def mark_imported(
     conn.commit()
 
 
+def auto_import(
+    weread_client: WereadClient,
+    flomo_client: Any,
+    conn: Any,
+    batch_size: int = 15,
+    classifier: Any = None,
+) -> dict[str, Any]:
+    """Automatically import reviewed highlights to flomo, one by one.
+
+    Args:
+        weread_client: Authenticated WeRead client.
+        flomo_client: Authenticated FlomoClient (must have create_memo method).
+        conn: SQLite connection for dedup tracking.
+        batch_size: How many highlights to process.
+        classifier: Optional callable(text, book_title) -> list[str] of tags.
+                    If None, only #微信读书 is applied.
+
+    Returns: {"imported": int, "skipped": int, "errors": list[str]}
+    """
+    items = fetch_reviewed_highlights(weread_client, conn, batch_size=batch_size)
+    result = {"imported": 0, "skipped": 0, "errors": []}
+
+    for item in items:
+        try:
+            # Build memo content
+            chapter = f"「{item['chapter']}」" if item["chapter"] else ""
+            content = (
+                f"> {item['mark_text']}\n\n"
+                f"{item['review_text']}\n\n"
+                f"——《{item['book_title']}》{item['author']}"
+            )
+
+            # Determine tags
+            tags = ["微信读书"]
+            if classifier:
+                extra = classifier(item["mark_text"] + " " + item["review_text"], item["book_title"])
+                if extra:
+                    tags.extend(extra)
+
+            # Create in flomo
+            resp = flomo_client.create_memo(content, tags=tags, source="weread")
+            slug = resp.get("data", {}).get("slug", "")
+
+            # Mark as imported
+            mark_imported(
+                conn, item["review_id"], item["book_id"],
+                item["book_title"], item["mark_text"], slug,
+            )
+            result["imported"] += 1
+            time.sleep(1.0)  # rate limit on flomo writes
+
+        except Exception as e:
+            result["errors"].append(f"Failed to import {item['review_id']}: {e}")
+            result["skipped"] += 1
+
+    return result
+
+
 def build_import_prompt(items: list[dict[str, Any]]) -> str:
     """Build a system prompt + formatted highlights+reviews for Claude."""
 

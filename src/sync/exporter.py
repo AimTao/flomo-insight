@@ -9,7 +9,7 @@ from typing import Any
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 
 from src.db import DatabaseManager
-from src.api.client import FlomoClient, FlomoAPIError
+from src.api.client import FlomoClient, FlomoAPIError, FlomoAuthError
 
 
 @dataclass
@@ -67,6 +67,10 @@ def sync(client: FlomoClient, db: DatabaseManager, full: bool = False, show_prog
                         latest_slug=latest_slug,
                         latest_updated_at=latest_updated_at,
                     )
+                except FlomoAuthError as e:
+                    # Auth errors are not retriable — surface clearly and stop
+                    result.errors.append(f"Auth error: {e}")
+                    break
                 except FlomoAPIError as e:
                     result.errors.append(f"API error on page {page}: {e}")
                     break

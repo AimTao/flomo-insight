@@ -129,7 +129,12 @@ def flomo_tags(sort_by: str = "count", limit: int = 50) -> list[dict]:
 
 @mcp.tool()
 def flomo_import_weread(batch_size: int = 15) -> str:
-    """Fetch reviewed highlights from WeRead Skills API + return prompt for Claude."""
+    """Fetch reviewed highlights from WeRead Skills API + return prompt for Claude.
+
+    LLM-assisted mode: returns highlights+reviews as a prompt. Claude reads each,
+    assigns tags (must include 微信读书), and calls flomo_create + flomo_weread_mark_imported.
+    For automatic import without LLM tagging, use flomo_import_weread_auto instead.
+    """
     from src.config import require_weread_key
     from src.importers.weread import WereadClient, fetch_reviewed_highlights, build_import_prompt
     key = require_weread_key()
@@ -139,6 +144,37 @@ def flomo_import_weread(batch_size: int = 15) -> str:
         with WereadClient(key) as client:
             items = fetch_reviewed_highlights(client, db_conn, batch_size=batch_size)
         return build_import_prompt(items)
+    finally:
+        db_conn.close()
+
+
+@mcp.tool()
+def flomo_import_weread_auto(batch_size: int = 15, tag: str = "") -> dict:
+    """Automatically import WeRead reviewed highlights to flomo, one by one.
+
+    No LLM tagging — applies only #微信读书 (+ optional extra tag).
+    For smart LLM-based classification, use flomo_import_weread instead.
+
+    Args:
+        batch_size: How many highlights to import in this run.
+        tag: Optional extra tag to add to every imported memo (besides 微信读书).
+
+    Returns: {"imported": int, "skipped": int, "errors": list[str]}
+    """
+    from src.config import require_weread_key
+    from src.importers.weread import WereadClient, auto_import
+    from src.api.client import FlomoClient
+
+    weread_key = require_weread_key()
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+
+    extra_tag = [tag] if tag else None
+    classifier = (lambda text, title: extra_tag) if extra_tag else None
+
+    try:
+        with WereadClient(weread_key) as wclient, FlomoClient(require_token()) as fclient:
+            return auto_import(wclient, fclient, db_conn, batch_size=batch_size, classifier=classifier)
     finally:
         db_conn.close()
 

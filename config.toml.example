@@ -10,3 +10,10 @@ weread_key = ""
 
 # Database path
 db_path = "data/flomo.db"
+
+# Cloudflare D1 backup (optional) — https://dash.cloudflare.com → Workers & Pages → D1
+# Create a database: wrangler d1 create flomo-backup
+# Then run schema: wrangler d1 execute flomo-backup --command "CREATE TABLE IF NOT EXISTS memos (slug TEXT PRIMARY KEY, content TEXT NOT NULL, source TEXT DEFAULT 'flomo', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, backed_up_at TEXT NOT NULL)"
+d1_account_id = ""
+d1_database_id = ""
+d1_api_token = ""

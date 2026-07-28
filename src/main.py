@@ -132,32 +132,51 @@ app.add_typer(import_app, name="import")
 @import_app.command(name="weread")
 def import_weread_cmd(
     batch_size: int = typer.Option(15, "--batch", "-n", help="Items per batch"),
+    auto: bool = typer.Option(False, "--auto", help="Auto-import to flomo (no LLM tagging, only #微信读书)"),
+    tag: str = typer.Option("", "--tag", help="Extra tag for --auto mode (besides 微信读书)"),
 ):
-    """Fetch WeRead reviewed highlights (划线+书评) for import.
+    """Fetch WeRead reviewed highlights (划线+书评) and import to flomo.
 
-    Shows the highlights and your personal reviews. Actual import (with LLM
-    classification) happens via the MCP flomo_import_weread tool in Claude Code.
+    Default: prints highlights+reviews as a prompt for LLM-assisted import via MCP.
+    With --auto: imports directly to flomo with #微信读书 tag (no LLM classification).
     """
     from src.config import require_weread_key
-    from src.importers.weread import (
-        WereadClient,
-        fetch_reviewed_highlights,
-        build_import_prompt,
-    )
 
     db_conn = _get_db().get_connection()
     _get_db().migrate(db_conn)
 
     try:
-        with WereadClient(require_weread_key()) as client:
-            items = fetch_reviewed_highlights(client, db_conn, batch_size=batch_size)
+        if auto:
+            from src.importers.weread import WereadClient, auto_import
+            from src.api.client import FlomoClient
 
-        if not items:
-            console.print("[green]No new reviewed highlights. All caught up! 📚[/green]")
-            return
+            extra_tag = [tag] if tag else None
+            classifier = (lambda text, title: extra_tag) if extra_tag else None
 
-        prompt = build_import_prompt(items)
-        console.print(prompt)
+            with WereadClient(require_weread_key()) as wclient, FlomoClient(require_token()) as fclient:
+                console.print("[cyan]Auto-importing to flomo...[/cyan]")
+                result = auto_import(wclient, fclient, db_conn, batch_size=batch_size, classifier=classifier)
+
+            console.print(f"[green]✓ Imported: {result['imported']}[/green]")
+            if result["skipped"]:
+                console.print(f"[yellow]Skipped: {result['skipped']}[/yellow]")
+            for e in result["errors"]:
+                console.print(f"  [red]{e}[/red]")
+        else:
+            from src.importers.weread import (
+                WereadClient,
+                fetch_reviewed_highlights,
+                build_import_prompt,
+            )
+            with WereadClient(require_weread_key()) as client:
+                items = fetch_reviewed_highlights(client, db_conn, batch_size=batch_size)
+
+            if not items:
+                console.print("[green]No new reviewed highlights. All caught up! 📚[/green]")
+                return
+
+            prompt = build_import_prompt(items)
+            console.print(prompt)
     finally:
         db_conn.close()
 
@@ -207,9 +226,11 @@ def sync_cmd(
         f"[green]Sync complete: {result.total} total, {result.new} new[/green]"
     )
     if result.errors:
-        console.print(f"[yellow]Warnings: {len(result.errors)}[/yellow]")
         for e in result.errors:
-            console.print(f"  [dim]{e}[/dim]")
+            if "Auth error" in e:
+                console.print(f"[bold red]{e}[/bold red]")
+            else:
+                console.print(f"[yellow]Warning: {e}[/yellow]")
 
 
 # ── search ───────────────────────────────────────────────────────────────────
@@ -421,6 +442,41 @@ def perspectives_cmd():
     console.print(
         "\n[dim]These are available via the MCP flomo_insight tool in Claude Code.[/dim]"
     )
+
+
+# ── backup ───────────────────────────────────────────────────────────────────
+
+
+@app.command(name="backup")
+def backup_cmd(
+    batch_size: int = typer.Option(50, "--batch", "-n", help="Memos per D1 batch"),
+):
+    """Backup local memos to Cloudflare D1 (incremental).
+
+    Requires d1_account_id, d1_database_id, d1_api_token in config.toml.
+    First run pushes all memos; subsequent runs only push new/updated ones.
+    """
+    from src.config import require_d1_config
+    from src.backup.d1 import D1Backup, backup_to_d1
+
+    account_id, database_id, api_token = require_d1_config()
+    db = _get_db()
+    conn = db.get_connection()
+    db.migrate(conn)
+
+    try:
+        with D1Backup(account_id, database_id, api_token) as d1:
+            console.print("[cyan]Backing up to Cloudflare D1...[/cyan]")
+            result = backup_to_d1(conn, d1, batch_size=batch_size)
+        console.print(
+            f"[green]✓ Backup complete: {result['backed_up']} memos pushed "
+            f"(of {result['total']} pending)[/green]"
+        )
+    except Exception as e:
+        console.print(f"[red]Backup failed: {e}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
 
 
 # ── mcp ──────────────────────────────────────────────────────────────────────
