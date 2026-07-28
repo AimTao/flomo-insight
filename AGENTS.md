@@ -76,6 +76,23 @@ flomo insight topics         # 或 connections / cbt / inversion 等
 flomo backup                 # 增量推送至 Cloudflare D1
 ```
 
+## 提交前检查
+
+提交代码之前必须确认不包含以下内容：
+
+- `config.toml` 中的 flomo_token / weread_key / d1_api_token
+- 任何硬编码的 Bearer token / API key / password
+- 调试产物：`.playwright-mcp/`、截图 `.png`、临时脚本 `/tmp/`
+- `data/flomo.db` — 数据库文件（已 gitignored）
+
+```bash
+# 快速检查改动中是否含敏感词
+git diff --cached | grep -iE 'token|secret|key|password|Bearer' | grep -vE 'require_token|require_weread|_mask_token|api_key=flomo|config\.|\.example'
+# 应返回空
+```
+
+**调试产物处理**：用 `>> .gitignore` 追加，然后 `git add .gitignore && git commit -m "chore: gitignore debug artifacts"`
+
 ## Security
 
 config.toml and data/ are gitignored. No secrets in source code.
