@@ -451,26 +451,24 @@ def perspectives_cmd():
 def backup_cmd(
     batch_size: int = typer.Option(50, "--batch", "-n", help="Memos per D1 batch"),
 ):
-    """Backup local memos to Cloudflare D1 (incremental).
+    """Backup local memos to Cloudflare D1 (incremental via wrangler CLI).
 
-    Requires d1_account_id, d1_database_id, d1_api_token in config.toml.
+    Requires d1_database_id in config.toml. Auth via macOS Keychain (wrangler login).
     First run pushes all memos; subsequent runs only push new/updated ones.
     """
-    from src.config import require_d1_config
-    from src.backup.d1 import D1Backup, backup_to_d1
+    from src.config import require_d1_database_id
+    from src.backup.d1 import backup_to_d1
 
-    account_id, database_id, api_token = require_d1_config()
+    database_id = require_d1_database_id()
     db = _get_db()
     conn = db.get_connection()
     db.migrate(conn)
 
     try:
-        with D1Backup(account_id, database_id, api_token) as d1:
-            console.print("[cyan]Backing up to Cloudflare D1...[/cyan]")
-            result = backup_to_d1(conn, d1, batch_size=batch_size)
+        console.print("[cyan]Backing up to Cloudflare D1...[/cyan]")
+        result = backup_to_d1(conn, database_id, batch_size=batch_size)
         console.print(
-            f"[green]✓ Backup complete: {result['backed_up']} memos pushed "
-            f"(of {result['total']} pending)[/green]"
+            f"[green]✓ Backed up {result['backed_up']}/{result['total']} memos to D1[/green]"
         )
     except Exception as e:
         console.print(f"[red]Backup failed: {e}[/red]")

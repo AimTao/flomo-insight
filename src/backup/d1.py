@@ -1,30 +1,18 @@
-"""Cloudflare D1 backup — push flomo memos to a D1 database.
+"""Cloudflare D1 backup — push flomo memos via wrangler CLI.
 
-D1 is Cloudflare's serverless SQLite. We use the REST API to upsert memos.
-Incremental: only pushes memos with updated_at > last backed-up timestamp.
-
-Setup:
-  1. Create a D1 database: wrangler d1 create flomo-backup
-  2. Run the schema (see create_schema_sql below) via wrangler d1 execute
-  3. Set in config.toml:
-       d1_account_id = "..."
-       d1_database_id = "..."
-       d1_api_token = "..."  (Cloudflare API token with D1 edit permission)
+Uses `npx wrangler d1 execute` which reads the macOS Keychain OAuth token.
+No API token needed — just configure the database ID in config.toml.
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import subprocess
 import time
 from typing import Any
 
-import httpx
 
-D1_API_BASE = "https://api.cloudflare.com/client/v4"
-TIMEOUT = 60.0
-
-
-# D1 schema for the backup table
 CREATE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS memos (
     slug TEXT PRIMARY KEY,
@@ -37,92 +25,76 @@ CREATE TABLE IF NOT EXISTS memos (
 """
 
 
-class D1Backup:
-    """Push memos to Cloudflare D1 via REST API."""
-
-    def __init__(self, account_id: str, database_id: str, api_token: str) -> None:
-        self.account_id = account_id
-        self.database_id = database_id
-        self._client = httpx.Client(
-            base_url=D1_API_BASE,
-            timeout=TIMEOUT,
-            headers={"Authorization": f"Bearer {api_token}"},
-        )
-
-    def close(self) -> None:
-        self._client.close()
-
-    def __enter__(self) -> "D1Backup":
-        return self
-
-    def __exit__(self, *args: Any) -> None:
-        self.close()
-
-    def _query(self, sql: str, params: list[Any] | None = None) -> dict[str, Any]:
-        """Execute a SQL query on D1. Returns the raw API response."""
-        url = f"/accounts/{self.account_id}/d1/database/{self.database_id}/query"
-        body: dict[str, Any] = {"sql": sql}
-        if params:
-            body["params"] = [str(p) if not isinstance(p, (int, float, bool)) else p for p in params]
-        resp = self._client.post(url, json=body)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data.get("success"):
-            errors = data.get("errors", [])
-            raise D1BackupError(f"D1 query failed: {errors}")
-        return data
-
-    def create_schema(self) -> None:
-        """Create the memos table in D1 if it doesn't exist."""
-        self._query(CREATE_SCHEMA_SQL)
-
-    def upsert_memo(self, slug: str, content: str, source: str,
-                    created_at: str, updated_at: str) -> None:
-        """Upsert a single memo into D1."""
-        sql = """
-        INSERT INTO memos (slug, content, source, created_at, updated_at, backed_up_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(slug) DO UPDATE SET
-            content=excluded.content,
-            source=excluded.source,
-            updated_at=excluded.updated_at,
-            backed_up_at=excluded.backed_up_at
-        """
-        now = str(int(time.time()))
-        self._query(sql, [slug, content, source, created_at, updated_at, now])
-
-    def get_latest_backed_up_at(self) -> str:
-        """Get the max updated_at currently in D1 (for incremental backup)."""
-        data = self._query("SELECT MAX(updated_at) AS m FROM memos")
-        result = data.get("result", [])
-        if result and result[0].get("results"):
-            row = result[0]["results"][0]
-            return row.get("m") or ""
-        return ""
-
-
 class D1BackupError(Exception):
     pass
 
 
+def _run_wrangler(database_id: str, sql: str) -> list[dict[str, Any]]:
+    """Execute a SQL statement on D1 via wrangler CLI. Returns list of result rows."""
+    cmd = [
+        "npx", "wrangler", "d1", "execute", database_id,
+        "--remote", "--command", sql, "--json",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        raise D1BackupError("wrangler d1 execute timed out after 60s")
+    except FileNotFoundError:
+        raise D1BackupError(
+            "npx not found. Install Node.js: https://nodejs.org"
+        )
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise D1BackupError(f"wrangler failed: {stderr}")
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise D1BackupError(f"wrangler returned non-JSON: {result.stdout[:200]}")
+
+    if isinstance(data, list):
+        return data
+    # Single result object
+    return [data]
+
+
+def _get_latest_backed_up_at(database_id: str) -> str:
+    """Get the max updated_at currently in D1."""
+    rows = _run_wrangler(database_id, "SELECT MAX(updated_at) AS m FROM memos")
+    if rows:
+        results = rows[0].get("results", [])
+        if results and results[0].get("m"):
+            return results[0]["m"]
+    return ""
+
+
+def _create_schema(database_id: str) -> None:
+    _run_wrangler(database_id, CREATE_SCHEMA_SQL)
+
+
+def _escape_sql_value(v: str) -> str:
+    """Escape a string for safe embedding in SQL. Single quotes only."""
+    return v.replace("'", "''")
+
+
 def backup_to_d1(
     conn: sqlite3.Connection,
-    d1: D1Backup,
+    database_id: str,
     batch_size: int = 50,
 ) -> dict[str, int]:
-    """Backup all memos (incremental) to D1.
+    """Backup all memos (incremental) to D1 via wrangler CLI.
 
     Args:
         conn: Local SQLite connection.
-        d1: Authenticated D1Backup client.
-        batch_size: Memos per D1 batch (D1 has query size limits).
+        database_id: D1 database UUID.
+        batch_size: Memos per batch.
 
     Returns: {"backed_up": int, "total": int}
     """
-    d1.create_schema()
+    _create_schema(database_id)
 
-    # Incremental: only memos newer than what's in D1
-    latest = d1.get_latest_backed_up_at()
+    latest = _get_latest_backed_up_at(database_id)
     if latest:
         rows = conn.execute(
             "SELECT slug, content, source, created_at, updated_at FROM memos "
@@ -139,22 +111,28 @@ def backup_to_d1(
     for i in range(0, total, batch_size):
         batch = rows[i : i + batch_size]
         now = str(int(time.time()))
-        placeholders = ",".join(["(?, ?, ?, ?, ?, ?)"] * len(batch))
-        sql = f"""
-        INSERT INTO memos (slug, content, source, created_at, updated_at, backed_up_at)
-        VALUES {placeholders}
-        ON CONFLICT(slug) DO UPDATE SET
-            content=excluded.content,
-            source=excluded.source,
-            updated_at=excluded.updated_at,
-            backed_up_at=excluded.backed_up_at
-        """
-        params: list[Any] = []
-        for r in batch:
-            params.extend([r["slug"], r["content"], r["source"], r["created_at"], r["updated_at"], now])
 
-        d1._query(sql, params)
+        # Build a multi-row INSERT ... ON CONFLICT
+        values_parts = []
+        for r in batch:
+            slug = _escape_sql_value(r["slug"])
+            content = _escape_sql_value(r["content"])
+            source = _escape_sql_value(r["source"])
+            created = _escape_sql_value(r["created_at"])
+            updated = _escape_sql_value(r["updated_at"])
+            values_parts.append(
+                f"('{slug}','{content}','{source}','{created}','{updated}','{now}')"
+            )
+
+        sql = (
+            "INSERT INTO memos (slug, content, source, created_at, updated_at, backed_up_at) "
+            f"VALUES {','.join(values_parts)} "
+            "ON CONFLICT(slug) DO UPDATE SET "
+            "content=excluded.content, source=excluded.source, "
+            "updated_at=excluded.updated_at, backed_up_at=excluded.backed_up_at"
+        )
+        _run_wrangler(database_id, sql)
         backed_up += len(batch)
-        time.sleep(0.5)  # D1 rate limit friendliness
+        time.sleep(0.5)
 
     return {"backed_up": backed_up, "total": total}
