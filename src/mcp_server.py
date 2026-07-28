@@ -129,21 +129,21 @@ def flomo_tags(sort_by: str = "count", limit: int = 50) -> list[dict]:
 
 @mcp.tool()
 def flomo_import_weread(batch_size: int = 15) -> str:
-    """Fetch reviewed highlights from WeRead Skills API + return prompt for Claude.
+    """Fetch reviewed highlights from WeRead + return prompt with fixed taxonomy.
 
-    LLM-assisted mode: returns highlights+reviews as a prompt. Claude reads each,
-    assigns tags (must include 微信读书), and calls flomo_create + flomo_weread_mark_imported.
-    For automatic import without LLM tagging, use flomo_import_weread_auto instead.
+    LLM picks tags from the predefined classification system (not free-form).
+    Includes both highlight text and your personal review for each item.
     """
     from src.config import require_weread_key
-    from src.importers.weread import WereadClient, fetch_reviewed_highlights, build_import_prompt
+    from src.importers.weread import WereadClient, fetch_reviewed_highlights
+    from src.tags.classifier import build_wearead_import_prompt
     key = require_weread_key()
     db_conn = _get_db().get_connection()
     _get_db().migrate(db_conn)
     try:
         with WereadClient(key) as client:
             items = fetch_reviewed_highlights(client, db_conn, batch_size=batch_size)
-        return build_import_prompt(items)
+        return build_wearead_import_prompt(items)
     finally:
         db_conn.close()
 
@@ -200,6 +200,70 @@ def flomo_weread_stats() -> dict:
     _get_db().migrate(db_conn)
     try:
         return build_weread_stats(db_conn)
+    finally:
+        db_conn.close()
+
+
+# ── Tag Management ───────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def flomo_tags_taxonomy() -> dict:
+    """Return the fixed tag classification system used for all tagging.
+
+    LLM must pick tags from this closed set. No free-form tag invention.
+    Keyed by domain with per-domain tag lists.
+    """
+    from src.tags.taxonomy import all_tags
+    return all_tags()
+
+
+@mcp.tool()
+def flomo_retag(batch_size: int = 10, source: str = "") -> str:
+    """Fetch memos + current tags + taxonomy for LLM-driven retagging.
+
+    Returns a prompt containing:
+    - The fixed tag taxonomy (closed set — only these are valid)
+    - Memos with their current tags
+    - Instructions for Claude to assign proper taxonomy tags
+
+    HOW: Call flomo_retag, read each memo, call flomo_tag_update(slug, tags)
+    to set new tags. Tags MUST come from flomo_tags_taxonomy.
+
+    Args:
+        batch_size: Memos to process this round.
+        source: Filter by source ('flomo' = original notes, 'weread' = weRead,
+                '' = all).
+    """
+    from src.tags.classifier import build_retag_prompt
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+    try:
+        return build_retag_prompt(db_conn, batch_size=batch_size,
+                                  source=source if source else None)
+    finally:
+        db_conn.close()
+
+
+@mcp.tool()
+def flomo_tag_update(slug: str, tags: list[str]) -> dict:
+    """Replace all tags on a memo with the given list.
+
+    This removes existing tags and sets exactly the provided tags.
+    Use after flomo_retag() to apply LLM-chosen tags.
+
+    Args:
+        slug: Memo slug (shown in retag prompt as [slug_short]).
+        tags: New tag list, e.g. ["效率", "习惯"]. No # prefix needed.
+
+    Returns: {"slug": ..., "tags": [...], "status": "updated"}
+    """
+    from src.tags.classifier import update_memo_tags
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+    try:
+        update_memo_tags(db_conn, slug, tags)
+        return {"slug": slug, "tags": tags, "status": "updated"}
     finally:
         db_conn.close()
 

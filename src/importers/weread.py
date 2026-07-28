@@ -264,20 +264,23 @@ def auto_import(
 
     for item in items:
         try:
-            # Build memo content
-            chapter = f"「{item['chapter']}」" if item["chapter"] else ""
-            content = (
-                f"> {item['mark_text']}\n\n"
-                f"{item['review_text']}\n\n"
-                f"——《{item['book_title']}》{item['author']}"
-            )
-
             # Determine tags
             tags = ["微信读书"]
             if classifier:
                 extra = classifier(item["mark_text"] + " " + item["review_text"], item["book_title"])
                 if extra:
                     tags.extend(extra)
+
+            # Build memo content. flomo's web renderer ignores plain "\n";
+            # line breaks must be sent as "<br>" tags (that's what the editor
+            # stores internally). Order: tags → highlight+citation on one line
+            # → blank line → review.
+            tag_str = " ".join(f"#{t}" for t in tags)
+            content = (
+                f"{tag_str}<br>"
+                f"{item['mark_text']} ——《{item['book_title']}》{item['author']}<br><br>"
+                f"{item['review_text']}"
+            )
 
             # Create in flomo
             resp = flomo_client.create_memo(content, tags=tags, source="weread")
@@ -296,50 +299,6 @@ def auto_import(
             result["skipped"] += 1
 
     return result
-
-
-def build_import_prompt(items: list[dict[str, Any]]) -> str:
-    """Build a system prompt + formatted highlights+reviews for Claude."""
-
-    if not items:
-        return "No new reviewed highlights to import. All caught up! 📚"
-
-    item_texts: list[str] = []
-    for i, h in enumerate(items):
-        chapter = f"「{h['chapter']}」" if h["chapter"] else ""
-        item_texts.append(
-            f"### #{i + 1} [review:{h['review_id']}]\n"
-            f"**书**: {h['book_title']}  作者: {h['author']}  {chapter}\n"
-            f"**划线**: {h['mark_text']}\n"
-            f"**书评**: {h['review_text']}"
-        )
-
-    items_block = "\n\n".join(item_texts)
-
-    return (
-        f"# 微信读书划线+书评导入\n\n"
-        f"你需要将以下 {len(items)} 条「划线 + 书评」逐条导入 flomo。\n"
-        f"每条都是你读过的书中的划线，以及你针对该划线写的书评/想法。\n\n"
-        f"## 导入规则（必须遵守）\n"
-        f"1. 每条创建一个 flomo memo，内容格式：\n"
-        f"```\n"
-        f"> 划线内容\n"
-        f"\n"
-        f"书评内容\n"
-        f"\n"
-        f"——《书名》作者\n"
-        f"```\n"
-        f"2. 每条必须打标签 **#微信读书**（硬性要求）\n"
-        f"3. 根据划线内容和书评内容，额外打 1-3 个分类标签\n"
-        f"   （如 #认知 #思维 #心理学 #管理 #效率 #哲学 #文学 #历史 等）\n"
-        f"4. 标签要具体、有区分度，不同书的标签应该不同\n"
-        f"5. 调用 flomo_create 逐条创建，tags 包含 #微信读书 + 分类标签\n"
-        f"6. 创建后调用 flomo_weread_mark_imported 标记已导入\n\n"
-        f"## 划线+书评列表\n\n"
-        f"{items_block}\n\n"
-        f"---\n"
-        f"请现在开始逐条导入。"
-    )
 
 
 def build_weread_stats(conn: Any) -> dict[str, Any]:

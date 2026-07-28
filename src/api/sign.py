@@ -26,6 +26,31 @@ def sign_params(params: dict[str, str]) -> dict[str, str]:
     return result
 
 
+def build_create_payload(
+    content: str,
+    source: str = "mcp",
+    extra: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Build signed JSON body for PUT /api/v1/memo (write operations).
+
+    The flomo web app puts ALL fields (content + metadata) in the body,
+    includes them in the sign computation, and sends NO query params.
+    """
+    payload: dict[str, str] = {
+        "content": content,
+        "source": source,
+        "tz": "8:0",
+        "timestamp": str(int(time.time())),
+        "api_key": "flomo_web",
+        "app_version": "4.0",
+        "platform": "web",
+        "webp": "1",
+    }
+    if extra:
+        payload.update(extra)
+    return sign_params(payload)
+
+
 def build_memo_params(
     limit: int = 200,
     latest_slug: str | None = None,

@@ -54,13 +54,27 @@ Claude Code does all the reasoning.
 | `flomo_weread_mark_imported` | Dedup tracking |
 | `flomo_weread_stats` | Import stats |
 
-## Insight types (flomo_insight)
+## 常用工作流
 
-### Analytical (notes + prompt)
-- `topics`, `stagnant`, `declining`, `connections`, `draft`
+### 微信读书导入
+→ 参考 `.claude/skills/tagging.md`
+```
+flomo import weread          # 拉取划线+书评，生成 LLM 导入 prompt
+# 然后逐条打标签 → flomo_create → flomo_weread_mark_imported
+```
 
-### Perspective lenses (notes + thinking lens prompt)
-- `default`, `value-clarification`, `inversion`, `second-order`, `cbt`, `mbti`
+### 洞察分析
+→ 参考 `.claude/skills/insight.md`
+```
+flomo sync                   # 先同步
+flomo insight topics         # 或 connections / cbt / inversion 等
+# CLI 输出 prompt+笔记原文，直接基于此写洞察
+```
+
+### 备份到 D1
+```
+flomo backup                 # 增量推送至 Cloudflare D1
+```
 
 ## Security
 

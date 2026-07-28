@@ -166,8 +166,8 @@ def import_weread_cmd(
             from src.importers.weread import (
                 WereadClient,
                 fetch_reviewed_highlights,
-                build_import_prompt,
             )
+            from src.tags.classifier import build_wearead_import_prompt
             with WereadClient(require_weread_key()) as client:
                 items = fetch_reviewed_highlights(client, db_conn, batch_size=batch_size)
 
@@ -175,7 +175,7 @@ def import_weread_cmd(
                 console.print("[green]No new reviewed highlights. All caught up! 📚[/green]")
                 return
 
-            prompt = build_import_prompt(items)
+            prompt = build_wearead_import_prompt(items)
             console.print(prompt)
     finally:
         db_conn.close()

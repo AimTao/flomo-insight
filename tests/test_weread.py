@@ -8,10 +8,10 @@ import pytest
 from src.importers.weread import (
     fetch_reviewed_highlights,
     mark_imported,
-    build_import_prompt,
     build_weread_stats,
     auto_import,
 )
+from src.tags.classifier import build_wearead_import_prompt
 from src.db import DatabaseManager
 
 
@@ -121,18 +121,18 @@ def test_mark_imported_idempotent(tmp_db):
     assert count == 1
 
 
-def test_build_import_prompt_empty():
-    result = build_import_prompt([])
+def test_build_wearead_import_prompt_empty():
+    result = build_wearead_import_prompt([])
     assert "No new" in result or "没有" in result or len(result) < 50
 
 
-def test_build_import_prompt_contains_mandatory_tag(tmp_db, weread_data):
+def test_build_wearead_import_prompt_contains_mandatory_tag(tmp_db, weread_data):
     """Prompt must instruct to use #微信读书 tag."""
     conn = tmp_db.get_connection()
     tmp_db.migrate(conn)
     client = _mock_weread_client(weread_data)
     items = fetch_reviewed_highlights(client, conn, batch_size=10)
-    prompt = build_import_prompt(items)
+    prompt = build_wearead_import_prompt(items)
     conn.close()
 
     assert "微信读书" in prompt

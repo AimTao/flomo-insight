@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from src.api.sign import build_memo_params, sign_params
+from src.api.sign import build_memo_params, build_create_payload, sign_params
 
 BASE_URL = "https://flomoapp.com"
 TIMEOUT = 30.0
@@ -142,19 +142,25 @@ class FlomoClient:
     # ── Write ─────────────────────────────────────────────────────────────
 
     def create_memo(self, content: str, tags: list[str] | None = None, source: str = "mcp") -> dict[str, Any]:
-        """Create a new memo via PUT /api/memo/"""
-        body_content = content
-        if tags:
-            tag_str = " ".join(f"#{t}" for t in tags)
-            body_content = f"{body_content}\n{tag_str}"
+        """Create a new memo via PUT /api/v1/memo
 
-        payload = {
-            "content": body_content,
-            "source": source,
-            "created_at": int(time.time() * 1000),
-        }
-        params = sign_params({})
-        return self._request_with_retry("PUT", "/api/memo/", params=params, json=payload)
+        All fields (content + metadata) go into the JSON body and participate
+        in the signature. No query params — the web app sends everything as body.
+        Tags are inlined into content by the caller (flomo parses #tag from text);
+        the `tags` arg here is only used to reconfirm them are not re-appended.
+        """
+        body = build_create_payload(content, source=source)
+        return self._request_with_retry("PUT", "/api/v1/memo", json=body)
+
+    def update_memo(self, slug: str, content: str) -> dict[str, Any]:
+        """Update an existing memo's content via PUT /api/v1/memo/{slug}.
+
+        Tags are inlined in content (#tag). The slug stays the same.
+        Body must NOT contain slug (it's in the URL path); including it
+        breaks the signature.
+        """
+        body = build_create_payload(content, source="mcp")
+        return self._request_with_retry("PUT", f"/api/v1/memo/{slug}", json=body)
 
     # ── Health ────────────────────────────────────────────────────────────
 
