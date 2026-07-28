@@ -28,15 +28,15 @@ from typing import Optional
 
 from fastmcp import FastMCP
 
-from flomo_insight.config import load_config, default_db_path, require_token
-from flomo_insight.db import DatabaseManager
+from src.config import load_config, require_token
+from src.db import DatabaseManager
 
 mcp = FastMCP(name="flomo-insight")
 
 
 def _get_db() -> DatabaseManager:
     cfg = load_config()
-    return DatabaseManager(cfg.storage.db_path or default_db_path())
+    return DatabaseManager(cfg.db_path)
 
 
 # ── Search ───────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ def flomo_search(
         limit: Max results to return.
         offset: Pagination offset.
     """
-    from flomo_insight.search.engine import search
+    from src.search.engine import search
 
     db = _get_db()
     conn = db.get_connection()
@@ -93,7 +93,7 @@ def flomo_create(
         tags: Tags to attach (without # prefix).
         source: Source identifier, defaults to 'mcp'.
     """
-    from flomo_insight.api.client import FlomoClient
+    from src.api.client import FlomoClient
 
                     with FlomoClient(require_token()) as client:
         result = client.create_memo(content, tags=tags, source=source)
@@ -117,8 +117,8 @@ def flomo_sync(full: bool = False) -> dict:
     Args:
         full: If true, re-sync everything from scratch (otherwise incremental).
     """
-    from flomo_insight.sync.exporter import sync
-    from flomo_insight.api.client import FlomoClient
+    from src.sync.exporter import sync
+    from src.api.client import FlomoClient
 
     db = _get_db()
             with FlomoClient(require_token()) as client:
@@ -157,25 +157,25 @@ def flomo_analyze(force: bool = False) -> dict:
     try:
         cfg = load_config()
 
-        from flomo_insight.analysis.embeddings import compute_embeddings
+        from src.analysis.embeddings import compute_embeddings
 
         embedded = compute_embeddings(
-            conn, model_name=cfg.analysis.embedding_model, force=force
+            conn, model_name=cfg.embedding_model, force=force
         )
 
-        from flomo_insight.analysis.clustering import cluster_memos
-        from flomo_insight.analysis.keywords import extract_keywords_per_cluster
+        from src.analysis.clustering import cluster_memos
+        from src.analysis.keywords import extract_keywords_per_cluster
 
         n_clusters = cluster_memos(
-            conn, min_cluster_size=cfg.analysis.cluster_min_size
+            conn, min_cluster_size=cfg.cluster_min_size
         )
         extract_keywords_per_cluster(conn)
 
-        from flomo_insight.analysis.trends import compute_trends
+        from src.analysis.trends import compute_trends
 
         compute_trends(conn)
 
-        from flomo_insight.analysis.cooccurrence import compute_cooccurrence
+        from src.analysis.cooccurrence import compute_cooccurrence
 
         compute_cooccurrence(conn)
 
@@ -243,7 +243,7 @@ def flomo_insight(insight_type: str = "topics") -> str:
 
     Returns markdown: system prompt + data section. You read and respond.
     """
-    from flomo_insight.insight.engine import generate_insight
+    from src.insight.engine import generate_insight
 
     db = _get_db()
     conn = db.get_connection()
@@ -265,7 +265,7 @@ def flomo_recent(limit: int = 20) -> list[dict]:
     Args:
         limit: Number of recent memos to return.
     """
-    from flomo_insight.search.engine import recent_memos
+    from src.search.engine import recent_memos
 
     db = _get_db()
     conn = db.get_connection()
@@ -297,7 +297,7 @@ def flomo_tags(sort_by: str = "count", limit: int = 50) -> list[dict]:
         sort_by: 'count' (most used first) or 'name' (alphabetical).
         limit: Max tags to return.
     """
-    from flomo_insight.search.engine import get_tags
+    from src.search.engine import get_tags
 
     db = _get_db()
     conn = db.get_connection()
@@ -338,8 +338,8 @@ def flomo_import_weread(batch_size: int = 15) -> str:
     Requires: WeRead API key from https://weread.qq.com/r/weread-skills
     Set via: flomo config set-weread-key wrk-xxxxxxxx
     """
-    from flomo_insight.config import require_weread_key
-    from flomo_insight.importers.weread import (
+    from src.config import require_weread_key
+    from src.importers.weread import (
         WereadClient,
         fetch_reviewed_highlights,
         build_import_prompt,
@@ -378,7 +378,7 @@ def flomo_weread_mark_imported(
 
     Returns: {"status": "marked", "review_id": "..."}
     """
-    from flomo_insight.importers.weread import mark_imported
+    from src.importers.weread import mark_imported
 
     db_conn = _get_db().get_connection()
     _get_db().migrate(db_conn)
@@ -393,7 +393,7 @@ def flomo_weread_mark_imported(
 @mcp.tool()
 def flomo_weread_stats() -> dict:
     """Show WeRead import statistics (how many highlights imported, per-book breakdown)."""
-    from flomo_insight.importers.weread import build_weread_stats
+    from src.importers.weread import build_weread_stats
 
     db_conn = _get_db().get_connection()
     _get_db().migrate(db_conn)

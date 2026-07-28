@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from flomo_insight.api.sign import build_memo_params, sign_params
+from src.api.sign import build_memo_params, sign_params
 
 BASE_URL = "https://flomoapp.com"
 TIMEOUT = 30.0

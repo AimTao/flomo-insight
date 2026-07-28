@@ -1,31 +1,54 @@
 # flomo-insight
 
-AI-powered analysis and insight engine for your flomo (浮墨笔记) data.
+AI-powered analysis and insight engine for your flomo (浮墨笔记) notes + WeRead (微信读书) import.
 
-Pull your flomo notes locally, search them, and discover hidden patterns in your
-thinking — topics you focus on, ideas that repeat, connections you hadn't noticed.
+Pull your notes locally, search them, and discover hidden patterns in your thinking — topics you focus on, ideas that repeat, connections you hadn't noticed. All insights are LLM-driven via Claude Code MCP.
 
 ## Quick Start
 
 ```bash
-# Install
+# 1. Clone and install
+git clone <repo>
+cd flomo-insight
 uv sync
 
-# Set your flomo token (from browser DevTools → Application → Cookies → flomoapp.com → token)
-flomo config set-token YOUR_TOKEN
+# 2. Configure
+cp config.toml.example config.toml
+# Edit config.toml — set your flomo_token
+# Get it: Chrome F12 → Network → /api/ → Authorization → value after "Bearer "
 
-# Pull all your notes
+# 3. Sync & analyze
 flomo sync
-
-# Search
-flomo search "思考" --tags 工作
-
-# Analyze & get insights
 flomo analyze
-flomo insight --type topics
+```
+
+## MCP Integration (Claude Code)
+
+```json
+{
+  "mcpServers": {
+    "flomo": {
+      "command": "uv",
+      "args": ["run", "flomo", "mcp"],
+      "cwd": "/path/to/flomo-insight"
+    }
+  }
+}
+```
+
+## CLI Commands
+
+```
+flomo sync          Sync notes from flomo
+flomo search "xxx"  Full-text search
+flomo create "xxx"  Create a memo
+flomo analyze       Run analysis pipeline
+flomo stats         Database statistics
+flomo config show   Show configuration
+flomo mcp           Start MCP server
 ```
 
 ## Requirements
 
 - Python 3.11+
-- A flomo account (token from browser cookies)
+- flomo account (token from browser)

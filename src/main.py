@@ -13,17 +13,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from flomo_insight import __version__
-from flomo_insight.config import (
-    load_config,
-    save_config,
-    default_db_path,
-    read_token,
-    save_token,
-    require_token,
-)
-from flomo_insight.db import DatabaseManager
-from flomo_insight.api.client import FlomoClient, FlomoAPIError
+from src import __version__
+from src.config import load_config, save_config, require_token
+from src.db import DatabaseManager
+from src.api.client import FlomoClient, FlomoAPIError
 
 app = typer.Typer(
     name="flomo",
@@ -42,8 +35,7 @@ app.add_typer(config_app, name="config")
 
 def _get_db() -> DatabaseManager:
     cfg = load_config()
-    db_path = cfg.storage.db_path or default_db_path()
-    return DatabaseManager(db_path)
+    return DatabaseManager(cfg.db_path)
 
 
 def _get_client() -> FlomoClient:
@@ -82,14 +74,14 @@ def _mask_token(token: str | None) -> str:
 def config_show():
     """Show current configuration."""
     cfg = load_config()
-    token = read_token()
     table = Table(title="flomo-insight Configuration")
     table.add_column("Key", style="cyan")
     table.add_column("Value", style="green")
-    table.add_row("Token", _mask_token(token))
-    table.add_row("DB Path", cfg.storage.db_path or default_db_path())
-    table.add_row("Embedding Model", cfg.analysis.embedding_model)
-    table.add_row("Cluster Min Size", str(cfg.analysis.cluster_min_size))
+    table.add_row("Token", _mask_token(cfg.flomo_token))
+    table.add_row("WeRead Key", _mask_token(cfg.weread_key))
+    table.add_row("DB Path", cfg.db_path)
+    table.add_row("Embedding Model", cfg.embedding_model)
+    table.add_row("Cluster Min Size", str(cfg.cluster_min_size))
     console.print(table)
 
 
@@ -105,42 +97,31 @@ def config_set_token(
     console.print("[cyan]Validating token...[/cyan]")
     with FlomoClient(token) as client:
         if not client.verify():
-            console.print(
-                "[red]Token validation failed. Check that the token is correct.[/red]"
-            )
-            console.print(
-                "[yellow]Get it from: Chrome DevTools → Application → Cookies → flomoapp.com → token[/yellow]"
-            )
+            console.print("[red]Token validation failed.[/red]")
             raise typer.Exit(1)
 
-    save_token(token)
-    console.print("[green]✓ Token saved and validated successfully![/green]")
+    cfg = load_config()
+    cfg.flomo_token = token
+    save_config(cfg)
+    console.print("[green]✓ Token saved and validated![/green]")
 
 
 @config_app.command(name="set-weread-key")
 def config_set_weread_key(
     key: str = typer.Argument(..., help="WeRead API key (wrk-xxxxxxxx)"),
 ):
-    """Set and validate your WeRead Skills API key.
-
-    Get it from https://weread.qq.com/r/weread-skills — log in to get your key.
-    Stored in ~/.local/share/flomo-insight/.weread_key (0600, not in git).
-    """
-    from flomo_insight.config import save_weread_key
-    from flomo_insight.importers.weread import WereadClient
+    """Set and validate your WeRead Skills API key."""
+    from src.importers.weread import WereadClient
 
     console.print("[cyan]Validating WeRead API key...[/cyan]")
     with WereadClient(key) as client:
         if not client.verify():
-            console.print(
-                "[red]API key validation failed. Check that the key is correct.[/red]"
-            )
-            console.print(
-                "[yellow]Get it from: https://weread.qq.com/r/weread-skills[/yellow]"
-            )
+            console.print("[red]API key validation failed.[/red]")
             raise typer.Exit(1)
 
-    save_weread_key(key)
+    cfg = load_config()
+    cfg.weread_key = key
+    save_config(cfg)
     console.print("[green]✓ WeRead API key saved and validated![/green]")
 
 
@@ -159,8 +140,8 @@ def import_weread_cmd(
     Shows the highlights and your personal reviews. Actual import (with LLM
     classification) happens via the MCP flomo_import_weread tool in Claude Code.
     """
-    from flomo_insight.config import require_weread_key
-    from flomo_insight.importers.weread import (
+    from src.config import require_weread_key
+    from src.importers.weread import (
         WereadClient,
         fetch_reviewed_highlights,
         build_import_prompt,
@@ -186,7 +167,7 @@ def import_weread_cmd(
 @app.command(name="weread-stats")
 def weread_stats_cmd():
     """Show WeRead import statistics."""
-    from flomo_insight.importers.weread import build_weread_stats
+    from src.importers.weread import build_weread_stats
     from rich.table import Table
 
     db_conn = _get_db().get_connection()
@@ -217,7 +198,7 @@ def sync_cmd(
     ),
 ):
     """Sync memos from flomo to the local database."""
-    from flomo_insight.sync.exporter import sync
+    from src.sync.exporter import sync
 
     db = _get_db()
     with _get_client() as client:
@@ -249,7 +230,7 @@ def search_cmd(
     ),
 ):
     """Search memos by full-text query."""
-    from flomo_insight.search.engine import search
+    from src.search.engine import search
 
     db = _get_db()
     conn = db.get_connection()
@@ -322,7 +303,7 @@ def recent_cmd(
     ),
 ):
     """Show recent memos."""
-    from flomo_insight.search.engine import recent_memos
+    from src.search.engine import recent_memos
 
     db = _get_db()
     conn = db.get_connection()
@@ -373,7 +354,7 @@ def tags_cmd(
     ),
 ):
     """List tags with memo counts."""
-    from flomo_insight.search.engine import get_tags
+    from src.search.engine import get_tags
 
     db = _get_db()
     conn = db.get_connection()
@@ -401,7 +382,7 @@ def stats_cmd(
     fmt: str = typer.Option("table", "--format", "-f", help="Output: table, json"),
 ):
     """Show database statistics."""
-    from flomo_insight.search.engine import db_stats
+    from src.search.engine import db_stats
 
     db = _get_db()
     conn = db.get_connection()
@@ -449,29 +430,29 @@ def analyze_cmd(
     cfg = load_config()
 
     console.print("[cyan]Step 1/4: Computing embeddings...[/cyan]")
-    from flomo_insight.analysis.embeddings import compute_embeddings
+    from src.analysis.embeddings import compute_embeddings
 
     embedded = compute_embeddings(
-        conn, model_name=cfg.analysis.embedding_model, force=force
+        conn, model_name=cfg.embedding_model, force=force
     )
     console.print(f"  [green]Embeddings: {embedded} memos processed[/green]")
 
     console.print("[cyan]Step 2/4: Clustering...[/cyan]")
-    from flomo_insight.analysis.clustering import cluster_memos
-    from flomo_insight.analysis.keywords import extract_keywords_per_cluster
+    from src.analysis.clustering import cluster_memos
+    from src.analysis.keywords import extract_keywords_per_cluster
 
     n_clusters = cluster_memos(conn, min_cluster_size=cluster_min_size)
     console.print(f"  [green]Clusters: {n_clusters} found[/green]")
     extract_keywords_per_cluster(conn)
 
     console.print("[cyan]Step 3/4: Computing trends...[/cyan]")
-    from flomo_insight.analysis.trends import compute_trends
+    from src.analysis.trends import compute_trends
 
     compute_trends(conn)
     console.print(f"  [green]Trends: computed for {n_clusters} clusters[/green]")
 
     console.print("[cyan]Step 4/4: Tag co-occurrence...[/cyan]")
-    from flomo_insight.analysis.cooccurrence import compute_cooccurrence
+    from src.analysis.cooccurrence import compute_cooccurrence
 
     edge_count = compute_cooccurrence(conn)
     console.print(f"  [green]Co-occurrence: {edge_count} tag pair edges[/green]")
@@ -489,7 +470,7 @@ def analyze_cmd(
 @app.command(name="perspectives")
 def perspectives_cmd():
     """List all available insight types and thinking lenses."""
-    from flomo_insight.insight.templates import list_perspectives
+    from src.insight.templates import list_perspectives
     from rich.table import Table
 
     ps = list_perspectives()
@@ -516,7 +497,7 @@ def mcp_cmd():
     console.print(
         "[dim]Configure in Claude Code: mcp add flomo -- uv run flomo mcp[/dim]"
     )
-    from flomo_insight.mcp_server import run_mcp
+    from src.mcp_server import run_mcp
 
     run_mcp()
 

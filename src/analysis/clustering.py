@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from flomo_insight.analysis.embeddings import load_all_vectors
+from src.analysis.embeddings import load_all_vectors
 
 
 def cluster_memos(

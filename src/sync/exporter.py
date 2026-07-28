@@ -8,8 +8,8 @@ from typing import Any
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 
-from flomo_insight.db import DatabaseManager
-from flomo_insight.api.client import FlomoClient, FlomoAPIError
+from src.db import DatabaseManager
+from src.api.client import FlomoClient, FlomoAPIError
 
 
 @dataclass

@@ -13,7 +13,7 @@ import time
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
-from flomo_insight.utils.text import clean_memo_text
+from src.utils.text import clean_memo_text
 
 
 def compute_embeddings(

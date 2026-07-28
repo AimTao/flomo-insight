@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from flomo_insight.utils.text import tokenize_for_tfidf, clean_memo_text
+from src.utils.text import tokenize_for_tfidf, clean_memo_text
 
 
 def extract_keywords_per_cluster(conn: sqlite3.Connection, top_n: int = 10) -> None:

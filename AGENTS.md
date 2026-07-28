@@ -1,167 +1,74 @@
 # AGENTS.md — flomo-insight
 
-AI-powered analysis and insight engine for flomo (浮墨笔记) + WeRead (微信读书) import.
+AI-powered analysis and insight engine for flomo + WeRead import.
 
-## Architecture
+## Project structure
 
 ```
-CLI (Typer)          MCP Server (FastMCP)
-    │                      │
-    ├─ sync                ├─ flomo_search
-    ├─ search              ├─ flomo_create
-    ├─ create              ├─ flomo_sync
-    ├─ analyze             ├─ flomo_analyze
-    ├─ recent              ├─ flomo_insight  (all types)
-    ├─ tags                ├─ flomo_recent
-    ├─ stats               ├─ flomo_tags
-    ├─ perspectives        ├─ flomo_import_weread
-    ├─ weread-stats        ├─ flomo_weread_mark_imported
-    ├─ import weread       └─ flomo_weread_stats
-    ├─ config
-    └─ mcp
+src/                         # Python package
+├── main.py                  # CLI (Typer)
+├── mcp_server.py            # MCP Server (FastMCP) — 10 tools
+├── config.py                # All settings from config.toml
+├── api/                     # flomo HTTP client + MD5 sign
+├── sync/                    # Paginated memo sync
+├── search/                  # FTS5 full-text search
+├── analysis/                # Embeddings, clustering, trends, cooccurrence
+├── insight/                 # LLM-driven insight engine (11 types)
+├── importers/               # WeRead highlight+review import
+└── utils/                   # jieba tokenization
+config.toml.example          # Template — user copies to config.toml
+config.toml                  # Secrets + settings (gitignored)
+data/                        # Database (gitignored)
+pyproject.toml
+AGENTS.md
+README.md
+```
 
-        ┌───────────┴───────────┐
-        │     SQLite (FTS5)     │
-        │  + embedding vectors  │
-        │  + cluster assignments│
-        │  + trend data         │
-        │  + weread_imports     │
-        └───────────────────────┘
-            │               │
-    ┌───────┴──────┐  ┌─────┴──────────┐
-    │ flomo API    │  │ WeRead API     │
-    │ (token)      │  │ (cookie)       │
-    └──────────────┘  └────────────────┘
+## Setup (for a new developer)
+
+```bash
+uv sync
+cp config.toml.example config.toml
+# Edit config.toml with flomo_token and optionally weread_key
+flomo sync
+flomo analyze
 ```
 
 ## Key decisions
 
-- **Insights are MCP-only**: The insight engine fetches notes + wraps them
-  with a system prompt. Claude Code reads the package and generates the
-  analysis. CLI cannot produce insights — it only prepares data (sync/analyze).
-- **WeRead import uses the official Skills API**: API key from
-  https://weread.qq.com/r/weread-skills (format `wrk-xxxxxxxx`).
-  Authenticated via `Authorization: Bearer wrk-xxx` header.
-- **All secrets in one file**: `~/.local/share/flomo-insight/.secrets` (0600 TOML).
-  Contains `flomo_token` and `weread_key`. Never in git.
-- **All user data is outside the repo**: Database, tokens, cookies, and config
-  all live under `~/.local/share/flomo-insight/` and `~/.config/flomo-insight/`.
-- **Tests use synthetic data only**: No real flomo or weread data in test fixtures.
+- **All settings in config.toml**: Secrets + non-sensitive settings in one file. User copies `config.toml.example` to get started. Both `config.toml` and `data/` are gitignored.
+- **Insights are MCP-only**: The insight engine fetches notes + wraps them with a system prompt. Claude Code reads the package and generates the analysis. CLI only prepares data.
+- **WeRead import uses official Skills API**: API key from https://weread.qq.com/r/weread-skills (format `wrk-xxxxxxxx`).
+- **Tests use synthetic data only**: No real user data in test fixtures.
 
-## Setup
+## MCP Tools (10)
 
-```bash
-uv sync
-# Edit ~/.local/share/flomo-insight/.secrets :
-#   flomo_token = "xxx"
-#   weread_key = "wrk-xxx"
-flomo sync                                       # pull all flomo notes
-flomo analyze                                    # embeddings + clustering + trends
-```
-
-## MCP Integration
-
-```json
-{
-  "mcpServers": {
-    "flomo": {
-      "command": "uv",
-      "args": ["run", "flomo", "mcp"],
-      "cwd": "/path/to/flomo-insight"
-    }
-  }
-}
-```
+| Tool | Purpose |
+|------|---------|
+| `flomo_search` | FTS5 search + tag filter |
+| `flomo_create` | Create memo (cloud + local) |
+| `flomo_sync` | Sync from flomo API |
+| `flomo_analyze` | Run analysis pipeline |
+| `flomo_insight` | LLM-driven insight (11 types) |
+| `flomo_recent` | Recent memos |
+| `flomo_tags` | Tag list + counts |
+| `flomo_import_weread` | Fetch WeRead highlights + reviews |
+| `flomo_weread_mark_imported` | Dedup tracking |
+| `flomo_weread_stats` | Import stats |
 
 ## Insight types (MCP: flomo_insight)
 
 ### Analytical (notes + cluster data + prompt)
-- `topics` — Cluster analysis, themes, patterns, blind spots
-- `stagnant` — Ideas spanning 60+ days, thought loop detection
-- `declining` — Topics with negative trend, interest trajectory
-- `connections` — Tag co-occurrence, cross-domain bridges
-- `draft` — Article structure from largest topic cluster
+- `topics`, `stagnant`, `declining`, `connections`, `draft`
 
 ### Perspective lenses (notes + thinking lens prompt)
-- `default` — Core themes, contradictions, blind spots (by flomo)
-- `value-clarification` — Find what you truly value (by shaonan)
-- `inversion` — Munger-style reverse thinking (by flomo)
-- `second-order` — Problems above problems (by shaonan)
-- `cbt` — Cognitive distortion detection (by flomo)
-- `mbti` — Personality type inference (by flomo)
-
-## WeRead import flow (MCP)
-
-```
-1. flomo_import_weread(batch_size=15)
-   → Fetches reviewed highlights (划线+书评) from WeRead Skills API
-   → Only returns highlights that have personal reviews attached
-   → Returns formatted prompt with highlight text + review text
-2. Claude reads each pair, classifies with tags
-3. For each: flomo_create(content, tags=["微信读书", ...])
-   content format:
-     > 划线内容
-
-     书评内容
-
-     ——《书名》作者
-4. After each: flomo_weread_mark_imported(review_id=..., ...)
-```
-
-API: `POST https://i.weread.qq.com/api/agent/gateway`
-Auth: `Authorization: Bearer wrk-xxxxxxxx`
-
-## Security & Privacy — NEVER leak these into git
-
-This project is designed to be open-source. All user-specific data lives
-outside the repo. Here's what you must protect:
-
-### Secrets (single file, 0600)
-- `.secrets` — `~/.local/share/flomo-insight/.secrets` — TOML format:
-  ```toml
-  flomo_token = "xxx"
-  weread_key = "wrk-xxx"
-  ```
-
-This file NEVER appears in:
-- `pyproject.toml` or any source file
-- `config.toml` (TOML config only stores non-secret settings)
-- Environment variables checked into the repo
-- Test fixtures or test code
-- Commit messages, comments, or documentation
-
-### User data (stored outside the repo)
-- `flomo.db` — full flomo note database (contains all your notes, tags, embeddings)
-- `config.toml` — local configuration paths
-
-### .gitignore checklist
-The `.gitignore` blocks:
-```
-*.db *.sqlite *.sqlite3    # all databases
-.secrets                   # all auth tokens
-```
-
-### Before committing, always verify
-```bash
-git status                  # check no secrets staged
-git diff --cached           # review staged changes
-grep -r "token\|wrk-" src/  # confirm no secrets in source
-```
-
-### If a secret is accidentally committed
-```bash
-git filter-branch --force --env-filter '...'  # or git filter-repo
-```
-Rotate the compromised credential immediately (re-login on weread.qq.com
-or get a new flomo token from browser).
+- `default`, `value-clarification`, `inversion`, `second-order`, `cbt`, `mbti`
 
 ## File locations
 
 | What | Where | In git? |
 |------|-------|---------|
-| Source code | `src/flomo_insight/` | ✅ |
-| Config | `~/.config/flomo-insight/config.toml` | ❌ |
-| Flomo token | `~/.local/share/flomo-insight/.secrets` (`flomo_token`) | ❌ |
-| WeRead key | `~/.local/share/flomo-insight/.secrets` (`weread_key`) | ❌ |
-| Database | `~/.local/share/flomo-insight/flomo.db` | ❌ |
-| Test data | `tests/fixtures/` (synthetic only) | ✅ |
+| Source code | `src/` | ✅ |
+| Config template | `config.toml.example` | ✅ |
+| Config (secrets) | `config.toml` | ❌ |
+| Database | `data/` | ❌ |

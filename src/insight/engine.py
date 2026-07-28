@@ -253,11 +253,11 @@ DRAFT_PROMPT = """你是一位写作教练和编辑。以下是同一个主题�
 
 def generate_insight(conn: sqlite3.Connection, insight_type: str) -> str:
     """Fetch notes + data, wrap with system prompt, return for Claude Code to interpret."""
-    from flomo_insight.insight.templates import PERSPECTIVES
+    from src.insight.templates import PERSPECTIVES
 
     # Perspective types (from flomo official + shaonan)
     if insight_type in PERSPECTIVES:
-        from flomo_insight.insight.templates import fetch_notes_for_perspective
+        from src.insight.templates import fetch_notes_for_perspective
 
         return fetch_notes_for_perspective(conn, insight_type)
 

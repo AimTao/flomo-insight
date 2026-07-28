@@ -17,9 +17,5 @@ build/
 Thumbs.db
 
 # Secrets & user data — NEVER commit
-.env
-data/
-*.db
-*.sqlite
-*.sqlite3
 config.toml
+data/
