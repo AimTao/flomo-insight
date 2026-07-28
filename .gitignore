@@ -20,3 +20,5 @@ Thumbs.db
 config.toml
 data/
 .wrangler/
+.playwright-mcp/
+flomo-order.png
