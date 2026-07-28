@@ -1,0 +1,37 @@
+[project]
+name = "flomo-insight"
+version = "0.1.0"
+description = "AI-powered analysis and insight engine for flomo notes"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "MI" }]
+readme = "README.md"
+
+dependencies = [
+    "typer>=0.15",
+    "rich>=13.9",
+    "httpx>=0.28",
+    "fastmcp>=2.0",
+    "sentence-transformers>=3.0",
+    "scikit-learn>=1.5",
+    "hdbscan>=0.8",
+    "umap-learn>=0.5",
+    "jieba>=0.42",
+    "tomli-w>=1.0",
+    "pydantic>=2.0",
+    "httpx[http2]",
+]
+
+[project.scripts]
+flomo = "flomo_insight.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-httpx>=0.30",
+    "respx>=0.21",
+]
