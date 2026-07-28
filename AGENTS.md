@@ -110,6 +110,48 @@ flomo analyze                                    # embeddings + clustering + tre
 API: `POST https://i.weread.qq.com/api/agent/gateway`
 Auth: `Authorization: Bearer wrk-xxxxxxxx`
 
+## Security & Privacy — NEVER leak these into git
+
+This project is designed to be open-source. All user-specific data lives
+outside the repo. Here's what you must protect:
+
+### Secrets (0600 files under ~/.local)
+- `.token` — flomo API token (from browser cookies)
+- `.weread_key` — WeRead Skills API key (format `wrk-xxx`)
+
+These NEVER appear in:
+- `pyproject.toml` or any source file
+- `config.toml` (TOML config only stores non-secret settings)
+- Environment variables checked into the repo
+- Test fixtures or test code
+- Commit messages, comments, or documentation
+
+### User data (stored outside the repo)
+- `flomo.db` — full flomo note database (contains all your notes, tags, embeddings)
+- `config.toml` — local configuration paths
+
+### .gitignore checklist
+The `.gitignore` blocks:
+```
+*.db *.sqlite *.sqlite3    # all databases
+.token *.token             # all auth tokens
+.weread_key               # WeRead API key
+```
+
+### Before committing, always verify
+```bash
+git status                  # check no secrets staged
+git diff --cached           # review staged changes
+grep -r "token\|wrk-" src/  # confirm no secrets in source
+```
+
+### If a secret is accidentally committed
+```bash
+git filter-branch --force --env-filter '...'  # or git filter-repo
+```
+Rotate the compromised credential immediately (re-login on weread.qq.com
+or get a new flomo token from browser).
+
 ## File locations
 
 | What | Where | In git? |
