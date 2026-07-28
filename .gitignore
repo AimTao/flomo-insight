@@ -22,7 +22,7 @@ Thumbs.db
 *.sqlite3
 .token
 *.token
-.weread_cookie
+.weread_key
 
 # Test outputs
 tests/output/

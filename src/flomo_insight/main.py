@@ -117,35 +117,31 @@ def config_set_token(
     console.print("[green]✓ Token saved and validated successfully![/green]")
 
 
-@config_app.command(name="set-weread-cookie")
-def config_set_weread_cookie(
-    cookie: str = typer.Argument(..., help="Full cookie string from weread.qq.com"),
+@config_app.command(name="set-weread-key")
+def config_set_weread_key(
+    key: str = typer.Argument(..., help="WeRead API key (wrk-xxxxxxxx)"),
 ):
-    """Set and validate your WeRead cookie.
+    """Set and validate your WeRead Skills API key.
 
-    Get it from Chrome DevTools → Application → Cookies → weread.qq.com.
-    Copy the entire cookie string (all key=value pairs).
-    Stored in ~/.local/share/flomo-insight/.weread_cookie (0600, not in git).
+    Get it from https://weread.qq.com/r/weread-skills — log in to get your key.
+    Stored in ~/.local/share/flomo-insight/.weread_key (0600, not in git).
     """
-    from flomo_insight.config import save_weread_cookie
+    from flomo_insight.config import save_weread_key
     from flomo_insight.importers.weread import WereadClient
 
-    console.print("[cyan]Validating WeRead cookie...[/cyan]")
-    with WereadClient(cookie) as client:
+    console.print("[cyan]Validating WeRead API key...[/cyan]")
+    with WereadClient(key) as client:
         if not client.verify():
             console.print(
-                "[red]Cookie validation failed. Check that the cookie is correct.[/red]"
+                "[red]API key validation failed. Check that the key is correct.[/red]"
             )
             console.print(
-                "[yellow]Get it from: Chrome DevTools → Application → Cookies → weread.qq.com[/yellow]"
-            )
-            console.print(
-                "[yellow]Copy ALL cookies from weread.qq.com as a single string.[/yellow]"
+                "[yellow]Get it from: https://weread.qq.com/r/weread-skills[/yellow]"
             )
             raise typer.Exit(1)
 
-    save_weread_cookie(cookie)
-    console.print("[green]✓ WeRead cookie saved and validated![/green]")
+    save_weread_key(key)
+    console.print("[green]✓ WeRead API key saved and validated![/green]")
 
 
 # ── import (weread) ──────────────────────────────────────────────────────────
@@ -156,17 +152,17 @@ app.add_typer(import_app, name="import")
 
 @import_app.command(name="weread")
 def import_weread_cmd(
-    batch_size: int = typer.Option(15, "--batch", "-n", help="Highlights per batch"),
+    batch_size: int = typer.Option(15, "--batch", "-n", help="Items per batch"),
 ):
-    """Fetch and display WeRead highlights for import.
+    """Fetch WeRead reviewed highlights (划线+书评) for import.
 
-    This shows the highlights. Actual import (with LLM classification)
-    happens via the MCP flomo_import_weread tool in Claude Code.
+    Shows the highlights and your personal reviews. Actual import (with LLM
+    classification) happens via the MCP flomo_import_weread tool in Claude Code.
     """
-    from flomo_insight.config import require_weread_cookie
+    from flomo_insight.config import require_weread_key
     from flomo_insight.importers.weread import (
         WereadClient,
-        fetch_unimported_highlights,
+        fetch_reviewed_highlights,
         build_import_prompt,
     )
 
@@ -174,14 +170,14 @@ def import_weread_cmd(
     _get_db().migrate(db_conn)
 
     try:
-        with WereadClient(require_weread_cookie()) as client:
-            highlights = fetch_unimported_highlights(client, db_conn, limit=batch_size)
+        with WereadClient(require_weread_key()) as client:
+            items = fetch_reviewed_highlights(client, db_conn, batch_size=batch_size)
 
-        if not highlights:
-            console.print("[green]No new highlights. All caught up! 📚[/green]")
+        if not items:
+            console.print("[green]No new reviewed highlights. All caught up! 📚[/green]")
             return
 
-        prompt = build_import_prompt(highlights)
+        prompt = build_import_prompt(items)
         console.print(prompt)
     finally:
         db_conn.close()

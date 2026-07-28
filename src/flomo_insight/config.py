@@ -2,7 +2,7 @@
 
 Config:  ~/.config/flomo-insight/config.toml  (no secrets)
 Tokens: ~/.local/share/flomo-insight/.token   (flomo, 0600)
-        ~/.local/share/flomo-insight/.weread_cookie  (weread, 0600)
+        ~/.local/share/flomo-insight/.weread_key  (weread, 0600)
 """
 
 from __future__ import annotations
@@ -52,8 +52,8 @@ def _token_path() -> Path:
     return _data_dir() / ".token"
 
 
-def _weread_cookie_path() -> Path:
-    return _data_dir() / ".weread_cookie"
+def _weread_key_path() -> Path:
+    return _data_dir() / ".weread_key"
 
 
 def default_db_path() -> str:
@@ -93,26 +93,26 @@ def require_token() -> str:
     return token
 
 
-# ── WeRead Cookie ────────────────────────────────────────────────────────────
+# ── WeRead API Key ────────────────────────────────────────────────────────────
 
 
-def read_weread_cookie() -> str | None:
-    return _read_secret(_weread_cookie_path())
+def read_weread_key() -> str | None:
+    return _read_secret(_weread_key_path())
 
 
-def save_weread_cookie(cookie: str) -> None:
-    _write_secret(_weread_cookie_path(), cookie)
+def save_weread_key(key: str) -> None:
+    _write_secret(_weread_key_path(), key)
 
 
-def require_weread_cookie() -> str:
-    cookie = read_weread_cookie()
-    if not cookie:
+def require_weread_key() -> str:
+    key = read_weread_key()
+    if not key:
         raise RuntimeError(
-            "No WeRead cookie configured.\n"
-            "Get it from: Chrome DevTools → Application → Cookies → weread.qq.com\n"
-            "Copy the full cookie string, then run: flomo config set-weread-cookie COOKIE"
+            "No WeRead API key configured.\n"
+            "Go to https://weread.qq.com/r/weread-skills and log in to get your key.\n"
+            "Then run: flomo config set-weread-key wrk-xxxxxxxx"
         )
-    return cookie
+    return key
 
 
 # ── Config ───────────────────────────────────────────────────────────────────

@@ -313,64 +313,69 @@ def flomo_tags(sort_by: str = "count", limit: int = 50) -> list[dict]:
 
 @mcp.tool()
 def flomo_import_weread(batch_size: int = 15) -> str:
-    """Fetch unimported highlights from WeRead (微信读书) and return them
-    formatted with a system prompt for Claude to classify and import.
+    """Fetch reviewed highlights (划线+书评) from WeRead via the official Skills API.
+
+    Only returns highlights that have personal reviews attached — your actual
+    书评/想法 written after highlighting a passage.
 
     HOW TO USE:
-    1. Call flomo_import_weread() to get the next batch of highlights
-    2. Read each highlight carefully
-    3. For each one, call flomo_create() with:
-       - content formatted as: "划线内容\n\n——《书名》作者"
-       - tags MUST include "微信读书" plus 1-3 content-based classification tags
-    4. After creating each memo, call flomo_weread_mark_imported() to record it
+    1. Call flomo_import_weread(batch_size=15) to get the next batch
+    2. Read each item: it has both 划线 (highlight) AND 书评 (your review)
+    3. For each item, call flomo_create() with:
+       content:
+         > 划线内容
+
+         书评内容
+
+         ——《书名》作者
+       tags: MUST include "微信读书" plus 1-3 classification tags
+    4. After each, call flomo_weread_mark_imported(review_id=..., ...)
 
     Args:
-        batch_size: Number of highlights to fetch (max 30).
+        batch_size: Number of reviewed highlights to fetch (max 30).
 
-    Returns a formatted prompt with highlights ready for classification.
-    Returns "No new highlights" if everything is already imported.
+    Requires: WeRead API key from https://weread.qq.com/r/weread-skills
+    Set via: flomo config set-weread-key wrk-xxxxxxxx
     """
-    from flomo_insight.config import require_weread_cookie
+    from flomo_insight.config import require_weread_key
     from flomo_insight.importers.weread import (
         WereadClient,
-        fetch_unimported_highlights,
+        fetch_reviewed_highlights,
         build_import_prompt,
     )
 
-    cookie = require_weread_cookie()
+    key = require_weread_key()
     db_conn = _get_db().get_connection()
     _get_db().migrate(db_conn)
 
     try:
-        with WereadClient(cookie) as client:
-            highlights = fetch_unimported_highlights(
-                client, db_conn, limit=batch_size
-            )
-        return build_import_prompt(highlights)
+        with WereadClient(key) as client:
+            items = fetch_reviewed_highlights(client, db_conn, batch_size=batch_size)
+        return build_import_prompt(items)
     finally:
         db_conn.close()
 
 
 @mcp.tool()
 def flomo_weread_mark_imported(
-    bookmark_id: str,
+    review_id: str,
     book_id: str,
     book_title: str,
     mark_text: str,
     flomo_slug: str = "",
 ) -> dict:
-    """Mark a WeRead highlight as imported (for dedup tracking).
+    """Mark a Weread reviewed highlight as imported.
 
-    Call this AFTER successfully creating the flomo memo via flomo_create().
+    Call AFTER flomo_create() succeeds.
 
     Args:
-        bookmark_id: The bookmark ID from the highlight (shown in import prompt).
-        book_id: The book ID.
-        book_title: The book title.
+        review_id: The review ID from the import prompt (shown as [review:xxx]).
+        book_id: Book ID.
+        book_title: Book title.
         mark_text: The highlight text.
         flomo_slug: The slug returned by flomo_create().
 
-    Returns: {"status": "marked", "bookmark_id": "..."}
+    Returns: {"status": "marked", "review_id": "..."}
     """
     from flomo_insight.importers.weread import mark_imported
 
@@ -378,8 +383,8 @@ def flomo_weread_mark_imported(
     _get_db().migrate(db_conn)
 
     try:
-        mark_imported(db_conn, bookmark_id, book_id, book_title, mark_text, flomo_slug)
-        return {"status": "marked", "bookmark_id": bookmark_id}
+        mark_imported(db_conn, review_id, book_id, book_title, mark_text, flomo_slug)
+        return {"status": "marked", "review_id": review_id}
     finally:
         db_conn.close()
 

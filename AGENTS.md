@@ -39,9 +39,9 @@ CLI (Typer)          MCP Server (FastMCP)
 - **Insights are MCP-only**: The insight engine fetches notes + wraps them
   with a system prompt. Claude Code reads the package and generates the
   analysis. CLI cannot produce insights — it only prepares data (sync/analyze).
-- **WeRead import is LLM-driven**: Highlights are fetched and formatted with
-  a classification prompt. Claude reads each highlight, assigns 1-3 content-based
-  tags + mandatory #微信读书, and creates memos one by one.
+- **WeRead import uses the official Skills API**: API key from
+  https://weread.qq.com/r/weread-skills (format `wrk-xxxxxxxx`).
+  Authenticated via `Authorization: Bearer wrk-xxx` header.
 - **Tokens/cookies are stored separately**: `~/.local/share/flomo-insight/.token`
   and `.weread_cookie`, both 0600. Never in config.toml, never in git.
 - **All user data is outside the repo**: Database, tokens, cookies, and config
@@ -53,7 +53,7 @@ CLI (Typer)          MCP Server (FastMCP)
 ```bash
 uv sync
 flomo config set-token YOUR_FLOMO_TOKEN         # Chrome DevTools → Cookies → flomoapp.com → token
-flomo config set-weread-cookie YOUR_WEREAD_COOKIE # Chrome DevTools → Cookies → weread.qq.com → all cookies
+flomo config set-weread-key wrk-xxxxxxxx          # https://weread.qq.com/r/weread-skills
 flomo sync                                       # pull all flomo notes
 flomo analyze                                    # embeddings + clustering + trends
 ```
@@ -93,15 +93,22 @@ flomo analyze                                    # embeddings + clustering + tre
 
 ```
 1. flomo_import_weread(batch_size=15)
-   → Fetches unimported highlights from WeRead API
-   → Returns formatted prompt with all highlights
-2. Claude reads each highlight, classifies with tags
+   → Fetches reviewed highlights (划线+书评) from WeRead Skills API
+   → Only returns highlights that have personal reviews attached
+   → Returns formatted prompt with highlight text + review text
+2. Claude reads each pair, classifies with tags
 3. For each: flomo_create(content, tags=["微信读书", ...])
-4. After each: flomo_weread_mark_imported(bookmark_id, ...)
+   content format:
+     > 划线内容
+
+     书评内容
+
+     ——《书名》作者
+4. After each: flomo_weread_mark_imported(review_id=..., ...)
 ```
 
-Content format: `划线内容\n\n——《书名》作者`
-Tags: `["微信读书"]` + 1-3 classification tags
+API: `POST https://i.weread.qq.com/api/agent/gateway`
+Auth: `Authorization: Bearer wrk-xxxxxxxx`
 
 ## File locations
 
@@ -110,6 +117,6 @@ Tags: `["微信读书"]` + 1-3 classification tags
 | Source code | `src/flomo_insight/` | ✅ |
 | Config | `~/.config/flomo-insight/config.toml` | ❌ |
 | Flomo token | `~/.local/share/flomo-insight/.token` | ❌ |
-| WeRead cookie | `~/.local/share/flomo-insight/.weread_cookie` | ❌ |
+| WeRead key | `~/.local/share/flomo-insight/.weread_key` | ❌ |
 | Database | `~/.local/share/flomo-insight/flomo.db` | ❌ |
 | Test data | `tests/fixtures/` (synthetic only) | ✅ |

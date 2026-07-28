@@ -140,9 +140,9 @@ CREATE INDEX IF NOT EXISTS idx_cluster_memos_cluster ON cluster_memos(cluster_id
 """
 
 SCHEMA_V2 = """
--- WeRead import tracking (dedup)
+-- WeRead import tracking (dedup by review_id)
 CREATE TABLE IF NOT EXISTS weread_imports (
-    bookmark_id TEXT PRIMARY KEY,
+    review_id TEXT PRIMARY KEY,
     book_id TEXT NOT NULL,
     book_title TEXT NOT NULL,
     mark_text TEXT NOT NULL,
