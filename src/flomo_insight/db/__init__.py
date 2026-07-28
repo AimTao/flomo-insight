@@ -139,8 +139,22 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_dirty ON memos(embedding_dirty)
 CREATE INDEX IF NOT EXISTS idx_cluster_memos_cluster ON cluster_memos(cluster_id);
 """
 
+SCHEMA_V2 = """
+-- WeRead import tracking (dedup)
+CREATE TABLE IF NOT EXISTS weread_imports (
+    bookmark_id TEXT PRIMARY KEY,
+    book_id TEXT NOT NULL,
+    book_title TEXT NOT NULL,
+    mark_text TEXT NOT NULL,
+    imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+    flomo_slug TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_weread_imports_book ON weread_imports(book_id);
+"""
+
 MIGRATIONS: dict[int, str] = {
     1: SCHEMA_V1,
+    2: SCHEMA_V2,
 }
 
 CURRENT_SCHEMA_VERSION = max(MIGRATIONS.keys()) if MIGRATIONS else 0

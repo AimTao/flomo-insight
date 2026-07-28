@@ -1,6 +1,6 @@
 """FastMCP server — exposes flomo operations as MCP tools for Claude Code.
 
-Launched via `flomo mcp`. Configure in Claude Code's MCP settings:
+Launched via `flomo mcp`. Configure in Claude Code:
 {
   "mcpServers": {
     "flomo": {
@@ -10,6 +10,15 @@ Launched via `flomo mcp`. Configure in Claude Code's MCP settings:
     }
   }
 }
+
+Tools:
+  flomo_search    — Full-text search + tag filter
+  flomo_create    — Create memo (cloud + local)
+  flomo_sync      — Incremental/full sync from flomo API
+  flomo_analyze   — Run analysis pipeline
+  flomo_insight   — LLM-driven insight (all types)
+  flomo_recent    — Recent memos
+  flomo_tags      — Tag list with counts
 """
 
 from __future__ import annotations
@@ -19,7 +28,7 @@ from typing import Optional
 
 from fastmcp import FastMCP
 
-from flomo_insight.config import load_config, default_db_path
+from flomo_insight.config import load_config, default_db_path, require_token
 from flomo_insight.db import DatabaseManager
 
 mcp = FastMCP(name="flomo-insight")
@@ -30,14 +39,7 @@ def _get_db() -> DatabaseManager:
     return DatabaseManager(cfg.storage.db_path or default_db_path())
 
 
-def _get_token() -> str:
-    cfg = load_config()
-    if not cfg.auth.token:
-        raise RuntimeError("No flomo token configured. Run 'flomo config set-token YOUR_TOKEN'")
-    return cfg.auth.token
-
-
-# ── Tools ────────────────────────────────────────────────────────────────────
+# ── Search ───────────────────────────────────────────────────────────────────
 
 
 @mcp.tool()
@@ -77,8 +79,13 @@ def flomo_search(
         conn.close()
 
 
+# ── Create ───────────────────────────────────────────────────────────────────
+
+
 @mcp.tool()
-def flomo_create(content: str, tags: Optional[list[str]] = None, source: str = "mcp") -> dict:
+def flomo_create(
+    content: str, tags: Optional[list[str]] = None, source: str = "mcp"
+) -> dict:
     """Create a new flomo memo (synced to flomo cloud + local database).
 
     Args:
@@ -88,10 +95,18 @@ def flomo_create(content: str, tags: Optional[list[str]] = None, source: str = "
     """
     from flomo_insight.api.client import FlomoClient
 
-    with FlomoClient(_get_token()) as client:
+    with FlomoClient(require_token()) as client:
         result = client.create_memo(content, tags=tags, source=source)
         slug = result.get("data", {}).get("slug", "")
-        return {"slug": slug, "content": content, "tags": tags or [], "status": "created"}
+        return {
+            "slug": slug,
+            "content": content,
+            "tags": tags or [],
+            "status": "created",
+        }
+
+
+# ── Sync ─────────────────────────────────────────────────────────────────────
 
 
 @mcp.tool()
@@ -105,7 +120,7 @@ def flomo_sync(full: bool = False) -> dict:
     from flomo_insight.api.client import FlomoClient
 
     db = _get_db()
-    with FlomoClient(_get_token()) as client:
+    with FlomoClient(require_token()) as client:
         result = sync(client, db, full=full, show_progress=False)
 
     return {
@@ -116,17 +131,21 @@ def flomo_sync(full: bool = False) -> dict:
     }
 
 
+# ── Analyze ──────────────────────────────────────────────────────────────────
+
+
 @mcp.tool()
 def flomo_analyze(force: bool = False) -> dict:
     """Run the full analysis pipeline: embeddings, clustering, trends, keywords.
 
-    This is a potentially slow operation (seconds to minutes depending on memo count).
-    Run after syncing new data.
+    This is a potentially slow operation. Run after syncing new data.
+    Required before flomo_insight will work.
 
     Args:
         force: Recompute all embeddings from scratch (slow).
     """
     import warnings
+
     warnings.filterwarnings("ignore", category=FutureWarning)
     warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -138,20 +157,27 @@ def flomo_analyze(force: bool = False) -> dict:
         cfg = load_config()
 
         from flomo_insight.analysis.embeddings import compute_embeddings
-        embedded = compute_embeddings(conn, model_name=cfg.analysis.embedding_model, force=force)
+
+        embedded = compute_embeddings(
+            conn, model_name=cfg.analysis.embedding_model, force=force
+        )
 
         from flomo_insight.analysis.clustering import cluster_memos
         from flomo_insight.analysis.keywords import extract_keywords_per_cluster
-        n_clusters = cluster_memos(conn, min_cluster_size=cfg.analysis.cluster_min_size)
+
+        n_clusters = cluster_memos(
+            conn, min_cluster_size=cfg.analysis.cluster_min_size
+        )
         extract_keywords_per_cluster(conn)
 
         from flomo_insight.analysis.trends import compute_trends
+
         compute_trends(conn)
 
         from flomo_insight.analysis.cooccurrence import compute_cooccurrence
+
         compute_cooccurrence(conn)
 
-        # Get top topics summary
         clusters = conn.execute(
             "SELECT keywords, size FROM clusters WHERE cluster_label != -1 ORDER BY size DESC LIMIT 5"
         ).fetchall()
@@ -170,17 +196,51 @@ def flomo_analyze(force: bool = False) -> dict:
         conn.close()
 
 
+# ── Insight (all types, LLM-driven) ──────────────────────────────────────────
+
+
 @mcp.tool()
 def flomo_insight(insight_type: str = "topics") -> str:
-    """Generate an AI insight from analyzed flomo data.
+    """Generate an LLM-driven insight package from analyzed flomo data.
+
+    This tool fetches relevant notes + statistics from your database,
+    wraps them with a detailed system prompt, and returns the package for
+    Claude Code to interpret. No hardcoded conclusions — you do the thinking.
+
+    HOW TO USE: Call flomo_insight, read the returned prompt+notes carefully,
+    then generate a thoughtful insight analysis in Chinese following the
+    instructions embedded in the response.
 
     Args:
-        insight_type: Statistical insight type:
-            - topics: What topics you think about most
-            - stagnant: Ideas that appear repeatedly but may lack follow-through
-            - declining: Topics losing interest over time
-            - connections: Hidden connections between tags
-            - draft: Writing draft from clustered notes
+        insight_type: One of the following insight types:
+
+        Analytical (notes + cluster data + prompt):
+          topics      — Cluster analysis + representative notes. Find themes,
+                        patterns, blind spots, and energy distribution.
+          stagnant    — Ideas spanning 60+ days in the same cluster. Detect
+                        thought loops and suggest what to do about them.
+          declining   — Topics with negative monthly trend. Interpret what's
+                        fading, whether to reclaim or let go.
+          connections — Tag co-occurrence + bridge notes. Find surprising
+                        cross-domain links hidden in your thinking.
+          draft       — All notes from your largest topic. Design an article
+                        structure with outline, gap analysis, and opening.
+
+        Perspective lenses (notes + perspective system prompt):
+          default              — Core themes, contradictions, blind spots,
+                                 growth trajectory (by flomo)
+          value-clarification  — Find what you truly value, from chaos to
+                                 clarity (by shaonan)
+          inversion            — Munger-style reverse thinking: what would
+                                 ensure failure? (by flomo)
+          second-order         — Find problems above problems through
+                                 layered questioning (by shaonan)
+          cbt                  — Cognitive distortion detection with
+                                 reframing suggestions (by flomo)
+          mbti                 — Infer personality type from writing
+                                 patterns (by flomo)
+
+    Returns markdown: system prompt + data section. You read and respond.
     """
     from flomo_insight.insight.engine import generate_insight
 
@@ -194,44 +254,7 @@ def flomo_insight(insight_type: str = "topics") -> str:
         conn.close()
 
 
-@mcp.tool()
-def flomo_perspectives() -> list[dict]:
-    """List all available LLM-driven insight perspectives. Each perspective applies a
-    specific thinking lens (e.g. CBT therapy, inversion, value clarification) to your notes.
-
-    Returns a list with key, title, author, and description for each perspective.
-    Use flomo_perspective with a chosen key to generate the full prompt + notes.
-    """
-    from flomo_insight.insight.templates import list_perspectives
-    return list_perspectives()
-
-
-@mcp.tool()
-def flomo_perspective(lens: str = "default") -> str:
-    """Fetch your notes wrapped with a specific thinking perspective prompt.
-
-    This tool retrieves recent and representative notes from your database,
-    packages them with a system prompt that applies the chosen thinking lens,
-    and returns the result for Claude Code to interpret.
-
-    Args:
-        lens: The perspective key. Call flomo_perspectives first to see options.
-            Available: default, value-clarification, inversion, second-order,
-            cbt, mbti
-
-    Returns markdown: perspective system prompt + cluster summary + note contents.
-    You (Claude) should read this and generate the insight analysis.
-    """
-    from flomo_insight.insight.engine import generate_insight
-
-    db = _get_db()
-    conn = db.get_connection()
-    db.migrate(conn)
-
-    try:
-        return generate_insight(conn, insight_type="perspective", lens=lens)
-    finally:
-        conn.close()
+# ── Recent ───────────────────────────────────────────────────────────────────
 
 
 @mcp.tool()
@@ -262,6 +285,9 @@ def flomo_recent(limit: int = 20) -> list[dict]:
         conn.close()
 
 
+# ── Tags ─────────────────────────────────────────────────────────────────────
+
+
 @mcp.tool()
 def flomo_tags(sort_by: str = "count", limit: int = 50) -> list[dict]:
     """List all tags with memo counts.
@@ -280,6 +306,96 @@ def flomo_tags(sort_by: str = "count", limit: int = 50) -> list[dict]:
         return get_tags(conn, sort_by=sort_by, limit=limit)
     finally:
         conn.close()
+
+
+# ── WeRead Import ────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def flomo_import_weread(batch_size: int = 15) -> str:
+    """Fetch unimported highlights from WeRead (微信读书) and return them
+    formatted with a system prompt for Claude to classify and import.
+
+    HOW TO USE:
+    1. Call flomo_import_weread() to get the next batch of highlights
+    2. Read each highlight carefully
+    3. For each one, call flomo_create() with:
+       - content formatted as: "划线内容\n\n——《书名》作者"
+       - tags MUST include "微信读书" plus 1-3 content-based classification tags
+    4. After creating each memo, call flomo_weread_mark_imported() to record it
+
+    Args:
+        batch_size: Number of highlights to fetch (max 30).
+
+    Returns a formatted prompt with highlights ready for classification.
+    Returns "No new highlights" if everything is already imported.
+    """
+    from flomo_insight.config import require_weread_cookie
+    from flomo_insight.importers.weread import (
+        WereadClient,
+        fetch_unimported_highlights,
+        build_import_prompt,
+    )
+
+    cookie = require_weread_cookie()
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+
+    try:
+        with WereadClient(cookie) as client:
+            highlights = fetch_unimported_highlights(
+                client, db_conn, limit=batch_size
+            )
+        return build_import_prompt(highlights)
+    finally:
+        db_conn.close()
+
+
+@mcp.tool()
+def flomo_weread_mark_imported(
+    bookmark_id: str,
+    book_id: str,
+    book_title: str,
+    mark_text: str,
+    flomo_slug: str = "",
+) -> dict:
+    """Mark a WeRead highlight as imported (for dedup tracking).
+
+    Call this AFTER successfully creating the flomo memo via flomo_create().
+
+    Args:
+        bookmark_id: The bookmark ID from the highlight (shown in import prompt).
+        book_id: The book ID.
+        book_title: The book title.
+        mark_text: The highlight text.
+        flomo_slug: The slug returned by flomo_create().
+
+    Returns: {"status": "marked", "bookmark_id": "..."}
+    """
+    from flomo_insight.importers.weread import mark_imported
+
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+
+    try:
+        mark_imported(db_conn, bookmark_id, book_id, book_title, mark_text, flomo_slug)
+        return {"status": "marked", "bookmark_id": bookmark_id}
+    finally:
+        db_conn.close()
+
+
+@mcp.tool()
+def flomo_weread_stats() -> dict:
+    """Show WeRead import statistics (how many highlights imported, per-book breakdown)."""
+    from flomo_insight.importers.weread import build_weread_stats
+
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+
+    try:
+        return build_weread_stats(db_conn)
+    finally:
+        db_conn.close()
 
 
 # ── Runner ───────────────────────────────────────────────────────────────────

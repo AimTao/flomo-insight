@@ -16,5 +16,14 @@ build/
 .DS_Store
 Thumbs.db
 
-# uv
-uv.lock  # committed in apps, but we're a library
+# User data — NEVER commit these
+*.db
+*.sqlite
+*.sqlite3
+.token
+*.token
+.weread_cookie
+
+# Test outputs
+tests/output/
+tests/fixtures/*.db
