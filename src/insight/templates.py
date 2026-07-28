@@ -10,7 +10,6 @@ and returns them for Claude Code to interpret.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass, field
 
@@ -175,66 +174,16 @@ def fetch_notes_for_perspective(
     """
     perspective = get_perspective(perspective_key)
 
-    # Build query — fetch a diverse set: recent + representative from top clusters
-    slugs_used: set[str] = set()
     notes: list[str] = []
-
-    # 1. Recent notes (half)
-    recent = conn.execute(
-        "SELECT slug, content, created_at FROM memos ORDER BY created_at DESC LIMIT ?",
-        (limit // 2,),
+    rows = conn.execute(
+        "SELECT content, created_at FROM memos ORDER BY created_at DESC LIMIT ?",
+        (limit,),
     ).fetchall()
 
-    for r in recent:
-        if r["slug"] not in slugs_used:
-            slugs_used.add(r["slug"])
-            date = r["created_at"][:10] if r["created_at"] else "unknown"
-            notes.append(f"--- [{date}] ---\n{r['content']}")
+    for r in rows:
+        date = r["created_at"][:10] if r["created_at"] else "unknown"
+        notes.append(f"--- [{date}] ---\n{r['content']}")
 
-    # 2. Representative notes from clusters (other half)
-    if limit > len(notes):
-        cluster_memos = conn.execute(
-            """SELECT m.slug, m.content, m.created_at
-               FROM memos m
-               JOIN cluster_memos cm ON cm.memo_slug = m.slug
-               WHERE cm.membership_prob > 0.5
-               ORDER BY cm.membership_prob DESC
-               LIMIT ?""",
-            (limit - len(notes),),
-        ).fetchall()
-
-        for m in cluster_memos:
-            if m["slug"] not in slugs_used:
-                slugs_used.add(m["slug"])
-                date = m["created_at"][:10] if m["created_at"] else "unknown"
-                notes.append(f"--- [{date}] ---\n{m['content']}")
-
-    # If we still don't have enough, fill with more recent
-    if len(notes) < limit:
-        more = conn.execute(
-            """SELECT slug, content, created_at FROM memos
-               WHERE slug NOT IN ({})
-               ORDER BY created_at DESC LIMIT ?""".format(
-                ",".join("?" for _ in slugs_used) if slugs_used else "''"
-            ),
-            (*list(slugs_used), limit - len(notes)),
-        ).fetchall()
-        for m in more:
-            date = m["created_at"][:10] if m["created_at"] else "unknown"
-            notes.append(f"--- [{date}] ---\n{m['content']}")
-
-    # Also include cluster summary if available
-    cluster_summary = ""
-    clusters = conn.execute(
-        "SELECT keywords, size FROM clusters WHERE cluster_label != -1 ORDER BY size DESC LIMIT 5"
-    ).fetchall()
-    if clusters:
-        cluster_summary = "\n## 笔记聚类概览（主题分布）\n\n"
-        for i, c in enumerate(clusters):
-            kws = json.loads(c["keywords"]) if c["keywords"] else ["(untitled)"]
-            cluster_summary += f"- **{', '.join(kws[:5])}** — {c['size']} 条笔记\n"
-
-    # Assemble the full prompt
     parts = [
         f"# 视角：{perspective.title}",
         f"_{perspective.description}_",
@@ -243,13 +192,7 @@ def fetch_notes_for_perspective(
         "",
         "---",
         "",
+        "## 笔记内容\n",
+        "\n\n".join(notes),
     ]
-
-    if cluster_summary:
-        parts.append(cluster_summary)
-        parts.append("")
-
-    parts.append("## 笔记内容\n")
-    parts.append("\n\n".join(notes))
-
     return "\n".join(parts)

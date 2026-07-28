@@ -58,7 +58,7 @@ def _search_fts_only(
     # Get results with snippets
     rows = conn.execute(
         """SELECT m.slug, m.content, m.created_at, m.updated_at,
-                  snippet(memos_fts, 2, '<mark>', '</mark>', '...', 32) AS snippet
+                  snippet(memos_fts, 0, '<mark>', '</mark>', '...', 32) AS snippet
            FROM memos_fts
            JOIN memos m ON m.rowid = memos_fts.rowid
            WHERE memos_fts MATCH ?
@@ -103,7 +103,7 @@ def _search_with_tags(
 
     rows = conn.execute(
         f"""SELECT m.slug, m.content, m.created_at, m.updated_at,
-                   snippet(memos_fts, 2, '<mark>', '</mark>', '...', 32) AS snippet
+                   snippet(memos_fts, 0, '<mark>', '</mark>', '...', 32) AS snippet
             FROM memos_fts
             JOIN memos m ON m.rowid = memos_fts.rowid
             WHERE memos_fts MATCH ? AND {tag_filter}
@@ -177,16 +177,12 @@ def db_stats(conn: sqlite3.Connection) -> dict[str, Any]:
     last_sync = conn.execute(
         "SELECT value FROM sync_state WHERE key = 'last_sync_at'"
     ).fetchone()
-    embeddings = conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
-    clusters = conn.execute("SELECT COUNT(*) FROM clusters").fetchone()[0]
 
     from datetime import datetime
 
     return {
         "total_memos": total,
         "total_tags": tags_count,
-        "total_embeddings": embeddings,
-        "total_clusters": clusters,
         "last_sync": datetime.fromtimestamp(
             int(last_sync["value"])
         ).isoformat() if last_sync else "never",
