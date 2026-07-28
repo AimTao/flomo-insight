@@ -485,12 +485,7 @@ def backup_cmd(
 @app.command(name="mcp")
 def mcp_cmd():
     """Start the MCP server for Claude Code integration."""
-    console.print("[cyan]Starting flomo-insight MCP server...[/cyan]")
-    console.print(
-        "[dim]Configure in Claude Code: mcp add flomo -- uv run flomo mcp[/dim]"
-    )
     from src.mcp_server import run_mcp
-
     run_mcp()
 
 
