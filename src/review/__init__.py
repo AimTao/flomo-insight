@@ -1,1 +1,1 @@
-"""Daily review engine — connects related memos via Claude."""
+"""Daily review engine — overview + deep-dive for LLM-driven review generation."""
