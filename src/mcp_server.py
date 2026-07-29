@@ -110,6 +110,58 @@ def flomo_recent(limit: int = 20) -> list[dict]:
         conn.close()
 
 
+# ── Review (two-phase: overview → deep-dive) ──────────────────────────────────
+
+@mcp.tool()
+def flomo_review_candidates() -> dict:
+    """Phase 1: Return overview of ALL candidate memo pools (no full content).
+
+    Returns all pools across 4 strategies: same_book, tag_cluster, near_time, co_tag.
+    Each pool has: label, total_memos, content_samples (first ~80 chars),
+    and tag_distribution.
+
+    Claude should scan the landscape and pick promising pools using
+    flomo_review_pool(strategy, label) to get full content for deep-dive.
+
+    No SQL filtering — every book/tag/date/tag-pair is included.
+    LLM decides what's worth exploring.
+    """
+    from src.review.engine import get_overview
+    db = _get_db()
+    conn = db.get_connection()
+    db.migrate(conn)
+    try:
+        return get_overview(conn)
+    finally:
+        conn.close()
+
+
+@mcp.tool()
+def flomo_review_pool(strategy: str, label: str) -> dict | None:
+    """Phase 2: Return ALL complete notes for one specific candidate pool.
+
+    Args:
+        strategy: same_book | tag_cluster | near_time | co_tag
+        label: exact label from flomo_review_candidates (book title, tag name,
+               date string, or "A × B" for co-tag pairs)
+
+    Returns:
+        {label, total_memos, notes: [{slug, content, tags, date, source}]}
+        Content is NEVER truncated — full memo text.
+
+    Call this AFTER scanning flomo_review_candidates to deep-dive into
+    pools that look promising for grouping and review writing.
+    """
+    from src.review.engine import get_pool
+    db = _get_db()
+    conn = db.get_connection()
+    db.migrate(conn)
+    try:
+        return get_pool(conn, strategy, label)
+    finally:
+        conn.close()
+
+
 # ── Tags ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
