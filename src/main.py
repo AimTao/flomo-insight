@@ -449,78 +449,108 @@ def perspectives_cmd():
 
 @app.command(name="review")
 def review_cmd(
-    count: int = typer.Option(50, "--count", "-n", help="Groups per strategy"),
+    groups: bool = typer.Option(False, "--groups", help="Use legacy random-grouping (old behavior)"),
+    pool_strategy: str = typer.Option("", "--pool", help="Deep-dive: strategy (same_book|tag_cluster|near_time|co_tag)"),
+    pool_label: str = typer.Option("", "--label", help="Deep-dive: exact pool label from overview"),
     push: bool = typer.Option(False, "--push", help="Push reviews JSON to D1"),
     json_file: str = typer.Option("", "--json", help="Read reviews from JSON file"),
 ):
-    """Generate review groups and print as LLM prompt, or push reviews to D1.
+    """Generate review candidate overview or push reviews to D1.
 
-    Without --push: prints memo groups as a prompt for Claude to write reviews.
-    With --push --json <file>: reads reviews from a JSON file and pushes to D1.
+    Default: prints overview of ALL candidate pools (samples only).
+    With --pool + --label: deep-dive into one pool (full content).
+    With --groups: uses legacy random-grouping.
+    With --push --json <file>: reads reviews JSON and pushes to D1.
     """
-    from src.review.engine import find_groups
+    from src.review.engine import get_overview, get_pool, find_groups
     from src.backup.d1 import _run_wrangler, _escape_sql_value
+    import sys
 
     db_conn = _get_db().get_connection()
     _get_db().migrate(db_conn)
 
     try:
         if push and json_file:
-            # Push mode: read reviews from JSON, push to D1
             from src.config import require_d1_database_id
-            import json as _json
             d1_id = require_d1_database_id()
 
+            _run_wrangler(d1_id, "DROP TABLE IF EXISTS daily_reviews")
             _run_wrangler(d1_id, """
-                CREATE TABLE IF NOT EXISTS daily_reviews (
+                CREATE TABLE daily_reviews (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     date TEXT NOT NULL,
+                    strategy TEXT NOT NULL DEFAULT '',
                     memo_slugs TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    connection TEXT NOT NULL DEFAULT '',
+                    mood TEXT NOT NULL DEFAULT '共鸣',
                     served_count INTEGER DEFAULT 0,
                     created_at TEXT NOT NULL
                 )
             """)
 
             with open(json_file) as f:
-                reviews = _json.load(f)
+                reviews = json.load(f)
 
-            today = __import__("datetime").date.today().isoformat()
+            from datetime import date as _date
+            today = _date.today().isoformat()
             pushed = 0
             for r in reviews:
-                slugs_json = _json.dumps(r["slugs"], ensure_ascii=False)
+                slugs_json = json.dumps(r["slugs"], ensure_ascii=False)
                 content_esc = _escape_sql_value(r["content"])
+                strategy_esc = _escape_sql_value(r.get("strategy", ""))
+                connection_esc = _escape_sql_value(r.get("connection", ""))
+                mood_esc = _escape_sql_value(r.get("mood", "共鸣"))
                 import time
                 now = str(int(time.time()))
                 sql = (
-                    f"INSERT INTO daily_reviews (date, memo_slugs, content, served_count, created_at) "
-                    f"VALUES ('{today}','{slugs_json}','{content_esc}',0,'{now}')"
+                    f"INSERT INTO daily_reviews "
+                    f"(date, strategy, memo_slugs, content, connection, mood, served_count, created_at) "
+                    f"VALUES ('{today}','{strategy_esc}','{slugs_json}','{content_esc}',"
+                    f"'{connection_esc}','{mood_esc}',0,'{now}')"
                 )
                 _run_wrangler(d1_id, sql)
                 pushed += 1
                 if pushed % 20 == 0:
-                    console.print(f"  Pushed {pushed}/{len(reviews)}...")
+                    print(f"  Pushed {pushed}/{len(reviews)}...", file=sys.stderr)
                 time.sleep(0.3)
 
-            console.print(f"[green]✓ Pushed {pushed} reviews to D1[/green]")
+            console.print(f"[green]✓ Pushed {pushed} reviews to D1 (new schema)[/green]")
             return
 
-        # Generate mode: find groups and output as prompt
-        console.print(f"[cyan]Finding memo groups (target: {count} per strategy)...[/cyan]")
-        groups = find_groups(db_conn, count_per_strategy=count)
-        console.print(f"[green]Found {len(groups)} groups[/green]")
+        if groups:
+            print("[cyan]Finding memo groups (legacy random-grouping)...[/cyan]", file=sys.stderr)
+            all_groups = find_groups(db_conn, count_per_strategy=50)
+            print(f"[green]Found {len(all_groups)} groups[/green]", file=sys.stderr)
 
-        # Output as JSON for subagent consumption
-        output = []
-        for g in groups:
-            output.append({
-                "slugs": g["slugs"],
-                "contents": g["contents"],
-                "strategy": g["strategy"],
-            })
+            output = []
+            for g in all_groups:
+                output.append({
+                    "slugs": g["slugs"],
+                    "contents": g["contents"],
+                    "strategy": g["strategy"],
+                })
+            print(json.dumps(output, ensure_ascii=False, indent=2))
+            return
 
-        import json as _json
-        print(_json.dumps(output, ensure_ascii=False, indent=2))
+        if pool_strategy and pool_label:
+            print(f"[cyan]Fetching pool: {pool_strategy}/{pool_label}...[/cyan]", file=sys.stderr)
+            result = get_pool(db_conn, pool_strategy, pool_label)
+            if result:
+                print(f"[green]✓ {result['total_memos']} memos[/green]", file=sys.stderr)
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                print(f"[red]Pool not found: {pool_strategy}/{pool_label}[/red]", file=sys.stderr)
+                raise typer.Exit(1)
+            return
+
+        # Default: Phase 1 — overview
+        print("[cyan]Building candidate pool overview...[/cyan]", file=sys.stderr)
+        overview = get_overview(db_conn)
+        total = sum(len(v) for v in overview.values())
+        print(f"[green]✓ {total} pools across 4 strategies[/green]", file=sys.stderr)
+
+        print(json.dumps(overview, ensure_ascii=False, indent=2))
 
     finally:
         db_conn.close()
