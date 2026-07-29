@@ -1,0 +1,16 @@
+name = "flomo-review"
+main = "review-worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+route = { pattern = "<your-domain>", zone_name = "<your-zone>" }
+
+[[d1_databases]]
+binding = "DB"
+database_name = "flomo-backup"
+database_id = "<your-d1-database-id>"
+
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["0 0 */2 * *"]

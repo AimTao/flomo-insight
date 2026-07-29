@@ -447,6 +447,88 @@ def perspectives_cmd():
 # ── backup ───────────────────────────────────────────────────────────────────
 
 
+@app.command(name="review")
+def review_cmd(
+    count: int = typer.Option(50, "--count", "-n", help="Groups per strategy"),
+    push: bool = typer.Option(False, "--push", help="Push reviews JSON to D1"),
+    json_file: str = typer.Option("", "--json", help="Read reviews from JSON file"),
+):
+    """Generate review groups and print as LLM prompt, or push reviews to D1.
+
+    Without --push: prints memo groups as a prompt for Claude to write reviews.
+    With --push --json <file>: reads reviews from a JSON file and pushes to D1.
+    """
+    from src.review.engine import find_groups
+    from src.backup.d1 import _run_wrangler, _escape_sql_value
+
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+
+    try:
+        if push and json_file:
+            # Push mode: read reviews from JSON, push to D1
+            from src.config import require_d1_database_id
+            import json as _json
+            d1_id = require_d1_database_id()
+
+            _run_wrangler(d1_id, """
+                CREATE TABLE IF NOT EXISTS daily_reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    memo_slugs TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    served_count INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            with open(json_file) as f:
+                reviews = _json.load(f)
+
+            today = __import__("datetime").date.today().isoformat()
+            pushed = 0
+            for r in reviews:
+                slugs_json = _json.dumps(r["slugs"], ensure_ascii=False)
+                content_esc = _escape_sql_value(r["content"])
+                import time
+                now = str(int(time.time()))
+                sql = (
+                    f"INSERT INTO daily_reviews (date, memo_slugs, content, served_count, created_at) "
+                    f"VALUES ('{today}','{slugs_json}','{content_esc}',0,'{now}')"
+                )
+                _run_wrangler(d1_id, sql)
+                pushed += 1
+                if pushed % 20 == 0:
+                    console.print(f"  Pushed {pushed}/{len(reviews)}...")
+                time.sleep(0.3)
+
+            console.print(f"[green]✓ Pushed {pushed} reviews to D1[/green]")
+            return
+
+        # Generate mode: find groups and output as prompt
+        console.print(f"[cyan]Finding memo groups (target: {count} per strategy)...[/cyan]")
+        groups = find_groups(db_conn, count_per_strategy=count)
+        console.print(f"[green]Found {len(groups)} groups[/green]")
+
+        # Output as JSON for subagent consumption
+        output = []
+        for g in groups:
+            output.append({
+                "slugs": g["slugs"],
+                "contents": g["contents"],
+                "strategy": g["strategy"],
+            })
+
+        import json as _json
+        print(_json.dumps(output, ensure_ascii=False, indent=2))
+
+    finally:
+        db_conn.close()
+
+
+# ── backup ───────────────────────────────────────────────────────────────────
+
+
 @app.command(name="backup")
 def backup_cmd(
     batch_size: int = typer.Option(50, "--batch", "-n", help="Memos per D1 batch"),

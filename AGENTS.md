@@ -78,6 +78,15 @@ flomo sync                   # 先同步
 flomo backup                 # 增量推送至 Cloudflare D1
 ```
 
+### 每日复习
+→ 参考 `.claude/skills/review.md`
+```
+flomo review -n 50 > groups.json    # 生成笔记分组
+# Claude 写复习内容 → reviews.json
+flomo review --push --json reviews.json  # 推送到 D1
+```
+Worker 部署在 memo.example.com，每天随机返回一条。
+
 ## 提交前检查
 
 提交代码之前必须确认不包含以下内容：

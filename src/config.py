@@ -17,6 +17,7 @@ class Config(BaseModel):
     weread_key: str = ""
     db_path: str = ""
     d1_database_id: str = ""
+    review_key: str = ""
 
 
 _root: Path | None = None
@@ -60,6 +61,7 @@ def load_config() -> Config:
         weread_key=d.get("weread_key", ""),
         db_path=d.get("db_path", str(data_dir() / "flomo.db")),
         d1_database_id=d.get("d1_database_id", ""),
+        review_key=d.get("review_key", ""),
     )
     return _config
 
