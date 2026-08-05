@@ -223,7 +223,7 @@ docs/                     # 文档
 
 ## Cloudflare Worker（每日复习）
 
-部署在 `memo.example.com`，按 `due_at` 返回一条到期的复习卡片。数据来源：本地 `flomo review-push` 推送到 D1 的 `daily_reviews` 表。
+部署在 `memo.example.com`，按 `due_at` 返回一条到期的复习卡片。Worker 从 D1 的 `daily_reviews` 表读取到期卡片，该表由本地的 `flomo review-push` 从 SQLite 的 `review_state` 排期生成并推送。
 
 ```bash
 cd worker
