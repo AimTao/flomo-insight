@@ -200,3 +200,27 @@ def test_sync_idempotent_second_run(tmp_db):
     # new should be 0 (already existed), total 1
     assert result.total == 1
     assert result.new == 0
+
+
+def test_sync_removes_trashed_memo(tmp_db):
+    """A memo that comes back with null content (trashed in flomo) is deleted
+    from the local store, not just skipped."""
+    # Pre-seed a memo that will be trashed on the next sync
+    conn = tmp_db.get_connection()
+    from src.sync.exporter import _upsert_memo
+    _upsert_memo(conn, make_memo(slug="doomed", content="<p>这条要被删</p>"))
+    conn.commit()
+    conn.close()
+
+    # Next sync returns that memo with null content (trashed)
+    trashed = make_memo(slug="doomed")
+    trashed["content"] = None
+    trashed["raw_content"] = None
+    client = _mock_client([[trashed]])
+
+    result = sync(client, tmp_db, full=True, show_progress=False)
+
+    conn = tmp_db.get_connection()
+    assert conn.execute("SELECT COUNT(*) FROM memos WHERE slug='doomed'").fetchone()[0] == 0
+    assert result.total == 0
+    conn.close()

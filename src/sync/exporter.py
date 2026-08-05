@@ -80,8 +80,10 @@ def sync(client: FlomoClient, db: DatabaseManager, full: bool = False, show_prog
                     break
 
                 for memo in memos:
-                    # Skip trashed memos (flomo returns them with null content)
+                    # Trashed memos come back with null content — remove them
+                    # from the local store so deleted notes don't linger.
                     if not memo.get("content"):
+                        _delete_memo(conn, memo.get("slug", ""))
                         continue
                     _upsert_memo(conn, memo)
 
@@ -175,6 +177,16 @@ def _upsert_memo(conn: Any, memo: dict[str, Any]) -> None:
                 "INSERT OR IGNORE INTO memo_tags (memo_slug, tag_id) VALUES (?, ?)",
                 (slug, tag_row["id"]),
             )
+
+
+def _delete_memo(conn: Any, slug: str) -> None:
+    """Delete a memo (trashed in flomo) and its tag links from the local store.
+
+    FTS triggers clean the search index; memo_tags cascade via FK.
+    """
+    if not slug:
+        return
+    conn.execute("DELETE FROM memos WHERE slug = ?", (slug,))
 
 
 def _parse_tags_from_memo(memo: dict[str, Any]) -> list[str]:
