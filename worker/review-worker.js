@@ -33,7 +33,7 @@ export default {
 async function handleGet(env) {
   const r = await env.DB.prepare(
     `SELECT * FROM daily_reviews
-     ORDER BY served_count ASC, date ASC
+     ORDER BY served_count ASC, RANDOM()
      LIMIT 1`
   ).first();
 

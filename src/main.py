@@ -562,12 +562,13 @@ def review_push_cmd():
     """Push cleaned memo content to D1 for the review worker.
 
     Rebuilds the D1 daily_reviews table from the local memos table:
-    one row per memo with plain-text content (tags stripped). The worker
-    rotates by served_count — lowest-served first — no due dates.
+    one row per memo with plain-text content (tags stripped), near-duplicates
+    collapsed to their longest variant. The worker rotates by served_count —
+    lowest-served first — no due dates.
     """
     from src.config import require_d1_database_id
     from src.backup.d1 import _run_wrangler, _escape_sql_value
-    from src.review.scheduler import to_plain_text, strip_known_tags
+    from src.review.scheduler import to_plain_text, strip_known_tags, dedupe_cards
     import time as _time
 
     d1_id = require_d1_database_id()
@@ -601,28 +602,41 @@ def review_push_cmd():
         for tr in tag_rows:
             slug_tags.setdefault(tr["memo_slug"], []).append(tr["name"])
 
-        pushed = 0
+        # Clean → dedupe (drop near-identical cards, keep longest) → skip
+        # cards left empty by cleaning (e.g. a memo that was only #tags).
+        cards = []
         for r in rows:
-            slug = _escape_sql_value(r["slug"])
             content = strip_known_tags(
                 to_plain_text(r["content"]),
                 slug_tags.get(r["slug"], []),
-            )
-            content = _escape_sql_value(content)
-            date_str = _escape_sql_value((r["created_at"] or "")[:10])
-            now = str(int(_time.time()))
+            ).strip()
+            if not content:
+                continue
+            cards.append((r["slug"], content, (r["created_at"] or "")[:10]))
+        cards = dedupe_cards(cards)
+
+        pushed = 0
+        now = str(int(_time.time()))
+        for i in range(0, len(cards), 50):
+            batch = cards[i : i + 50]
+            values_parts = []
+            for slug, content, date_str in batch:
+                values_parts.append(
+                    f"('{_escape_sql_value(slug)}','{_escape_sql_value(content)}',"
+                    f"'{_escape_sql_value(date_str)}',0,'{now}')"
+                )
             sql = (
-                "INSERT INTO daily_reviews "
-                "(slug, content, date, served_count, created_at) "
-                f"VALUES ('{slug}','{content}','{date_str}',0,'{now}')"
+                "INSERT INTO daily_reviews (slug, content, date, served_count, created_at) "
+                f"VALUES {','.join(values_parts)} "
+                "ON CONFLICT(slug) DO UPDATE SET "
+                "content=excluded.content, date=excluded.date"
             )
             _run_wrangler(d1_id, sql)
-            pushed += 1
-            if pushed % 20 == 0:
-                print(f"  Pushed {pushed}/{len(rows)}...", file=sys.stderr)
+            pushed += len(batch)
+            print(f"  Pushed {pushed}/{len(cards)}...", file=sys.stderr)
             _time.sleep(0.3)
 
-        console.print(f"[green]✓ Pushed {pushed} review cards to D1[/green]")
+        console.print(f"[green]✓ Pushed {pushed} review cards to D1 (from {len(rows)} memos, {len(rows) - len(cards)} duplicates/skipped)[/green]")
     finally:
         db_conn.close()
 

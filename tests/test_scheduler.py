@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from src.review.scheduler import strip_known_tags, to_plain_text
+from src.review.scheduler import (
+    dedupe_cards,
+    strip_known_tags,
+    to_plain_text,
+)
 
 
 # ── HTML stripping ───────────────────────────────────────────────────────────
@@ -84,3 +88,49 @@ def test_strip_longest_tag_first():
 def test_strip_no_tags_returns_text():
     assert strip_known_tags("hello world", []) == "hello world"
     assert strip_known_tags("hello world", ["absent"]) == "hello world"
+
+
+# ── dedupe_cards ─────────────────────────────────────────────────────────────
+
+def test_dedupe_keeps_longest_of_substring_dupes():
+    """A shorter card fully contained in a longer one is dropped; longest kept."""
+    cards = [
+        ("a", "抗干扰能力也是可以练习出来的，上本科那会经常坐车。", "2026-01-01"),
+        ("b", "抗干扰能力也是可以练习出来的，上本科那会经常坐车，所以我就常常拿着本大部头在车上看。", "2026-01-02"),
+    ]
+    out = dedupe_cards(cards)
+    assert len(out) == 1
+    assert out[0][0] == "b"  # longer variant survives
+
+
+def test_dedupe_ignores_short_substring_in_longer():
+    """A very short card (poem fragment) inside a longer text is NOT a dup."""
+    cards = [
+        ("a", "抗干扰能力", "2026-01-01"),  # < MIN_DUP_OVERLAP (10)
+        ("b", "抗干扰能力也是可以练习出来的，事实证明在有干扰的环境中看书非常锻炼专注。", "2026-01-02"),
+    ]
+    out = dedupe_cards(cards)
+    assert len(out) == 2  # both kept
+
+
+def test_dedupe_distinct_cards_kept():
+    cards = [
+        ("a", "焦虑是自由的眩晕。", "2026-01-01"),
+        ("b", "潮平两岸阔，风正一帆悬。", "2026-01-02"),
+    ]
+    assert len(dedupe_cards(cards)) == 2
+
+
+def test_dedupe_normalizes_quotes_and_whitespace():
+    """「」"" around the same text count as a dup after normalization."""
+    cards = [
+        ("a", "「抗干扰能力也是可以练习出来的，事实证明在有干扰的环境中看书非常锻炼专注。」", "2026-01-01"),
+        ("b", "抗干扰能力也是可以练习出来的，事实证明在有干扰的环境中看书非常锻炼专注。", "2026-01-02"),
+    ]
+    out = dedupe_cards(cards)
+    assert len(out) == 1
+
+
+def test_dedupe_empty_content_skipped():
+    cards = [("a", "", "2026-01-01"), ("b", "正常内容", "2026-01-02")]
+    assert len(dedupe_cards(cards)) == 1
