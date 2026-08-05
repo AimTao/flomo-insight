@@ -80,9 +80,11 @@ def sync(client: FlomoClient, db: DatabaseManager, full: bool = False, show_prog
                     break
 
                 for memo in memos:
-                    # Trashed memos come back with null content — remove them
-                    # from the local store so deleted notes don't linger.
-                    if not memo.get("content"):
+                    # Deleted/trashed memos carry a deleted_at marker (flomo
+                    # keeps content for recent trashes, nulls it for older
+                    # ones). Either way, remove them from the local store so
+                    # deleted notes don't linger or surface in reviews.
+                    if memo.get("deleted_at") or not memo.get("content"):
                         _delete_memo(conn, memo.get("slug", ""))
                         continue
                     _upsert_memo(conn, memo)

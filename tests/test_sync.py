@@ -224,3 +224,23 @@ def test_sync_removes_trashed_memo(tmp_db):
     assert conn.execute("SELECT COUNT(*) FROM memos WHERE slug='doomed'").fetchone()[0] == 0
     assert result.total == 0
     conn.close()
+
+
+def test_sync_removes_memo_with_deleted_at_but_content(tmp_db):
+    """A memo with deleted_at set (recent trash) is removed even though flomo
+    still returns its content."""
+    conn = tmp_db.get_connection()
+    from src.sync.exporter import _upsert_memo
+    _upsert_memo(conn, make_memo(slug="doomed2", content="<p>这条也被删</p>"))
+    conn.commit()
+    conn.close()
+
+    deleted = make_memo(slug="doomed2")
+    deleted["deleted_at"] = "2026-08-05 12:00:00"  # content still present
+    client = _mock_client([[deleted]])
+
+    result = sync(client, tmp_db, full=True, show_progress=False)
+
+    conn = tmp_db.get_connection()
+    assert conn.execute("SELECT COUNT(*) FROM memos WHERE slug='doomed2'").fetchone()[0] == 0
+    conn.close()

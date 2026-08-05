@@ -162,6 +162,16 @@ class FlomoClient:
         body = build_create_payload(content, source="mcp")
         return self._request_with_retry("PUT", f"/api/v1/memo/{slug}", json=body)
 
+    def delete_memo(self, slug: str) -> dict[str, Any]:
+        """Delete (trash) a memo via DELETE /api/v1/memo/{slug}.
+
+        Returns the API response; the memo's content becomes null and it
+        stops appearing in future syncs. The signature needs a non-empty
+        content field even though deletion ignores it.
+        """
+        body = build_create_payload("delete", source="web")
+        return self._request_with_retry("DELETE", f"/api/v1/memo/{slug}", json=body)
+
     # ── Health ────────────────────────────────────────────────────────────
 
     def verify(self) -> bool:
