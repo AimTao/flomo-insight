@@ -22,3 +22,11 @@ data/
 .wrangler/
 .playwright-mcp/
 flomo-order.png
+
+# Real wrangler.toml contains the live D1 database_id — commit only the .example
+worker/wrangler.toml
+
+# Third-party skill bundles (installed, not authored here)
+.claude/skills/cloudflare/
+.claude/skills/wrangler/
+.claude/skills/workers-best-practices/

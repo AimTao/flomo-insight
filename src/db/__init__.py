@@ -7,6 +7,7 @@ Tables:
   memos_fts   — FTS5 full-text search index
   sync_state  — incremental sync cursor
   weread_imports — WeRead import dedup
+  review_state — spaced-repetition schedule per memo
 """
 
 from __future__ import annotations
@@ -97,8 +98,31 @@ CREATE INDEX IF NOT EXISTS idx_memo_tags_tag ON memo_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_weread_imports_book ON weread_imports(book_id);
 """
 
-MIGRATIONS: dict[int, str] = {1: SCHEMA_V1}
-CURRENT_SCHEMA_VERSION = 1
+# V2: spaced-repetition schedule for daily review.
+# - state 'new'   → never reviewed; due_at is the intro slot
+# - state 'learning'/'review' → active; due_at recomputed after each grade
+# - state 'done'  → reviewed today, do not re-show until next due_at
+# - hook         → optional one-line angle written by the LLM (see review skill)
+SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS review_state (
+    slug TEXT PRIMARY KEY REFERENCES memos(slug) ON DELETE CASCADE,
+    state TEXT NOT NULL DEFAULT 'new',
+    interval_days REAL NOT NULL DEFAULT 0,
+    ease REAL NOT NULL DEFAULT 2.5,
+    due_at TEXT NOT NULL,
+    review_count INTEGER NOT NULL DEFAULT 0,
+    last_reviewed_at TEXT,
+    hook TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_state_due ON review_state(due_at);
+"""
+
+MIGRATIONS: dict[int, str] = {
+    1: SCHEMA_V1,
+    2: SCHEMA_V2,
+}
+CURRENT_SCHEMA_VERSION = 2
 
 
 @dataclass

@@ -96,12 +96,18 @@ flomo backup                   # 增量推送到 D1（仅推送更新的笔记�
 ### 每日复习
 
 ```bash
-flomo review -n 50 > groups.json    # 生成笔记分组（4 种关联策略）
-# Claude/subagent 为每组写 1-2 句复习 → 存为 reviews.json
-flomo review --push --json reviews.json  # 推送到 D1
+flomo sync                         # 先同步最新笔记
+flomo review-daily -o queue.json   # 间隔重复:今天到期的笔记(你的原文)
+# Claude 为每条到期笔记写一条「钩子」→ 回填 queue.json
+flomo review grade <slug> good     # 逐条评分,系统安排下次复习时间
+flomo review-push                  # 把复习节奏推送到 D1(供 Worker 用)
 ```
 
-复习通过 Cloudflare Worker 在 `memo.example.com` 提供，每次请求返回一条。
+复习节奏由简化 SM-2 间隔重复决定:`again`→1 天、`hard`→×1.3、`good`→×2、`easy`→×3(封顶 60 天),新笔记在 30 天内逐步引入。
+
+主题回顾(可选):`flomo review` 两阶段深潜,Claude 从候选池挑关联笔记写主题回顾 → `flomo review --push --json reviews.json`。
+
+复习通过 Cloudflare Worker 在 `memo.example.com` 提供,每次返回一条到期的复习。
 
 详细流程 → 见 `.claude/skills/review.md`
 
@@ -216,7 +222,7 @@ docs/                     # 文档
 
 ## Cloudflare Worker（每日复习）
 
-部署在 `memo.example.com`，从 D1 随机返回一条复习。
+部署在 `memo.example.com`，按 `due_at` 返回一条到期的复习卡片。
 
 ```bash
 # 部署
@@ -225,13 +231,20 @@ npx wrangler secret put REVIEW_KEY   # 访问密钥
 npx wrangler secret put FLOMO_TOKEN  # flomo 同步用
 npx wrangler deploy
 
-# 访问
+# 访问(返回今天到期的一条卡片)
 curl "https://memo.example.com/?key=<REVIEW_KEY>"
-# → {"content": "...", "date": "2026-07-29", "id": 42}
+# → {"slug": "...", "content": "...", "hook": "...", "due": "2026-08-05"}
+
+# 评分(推进下次复习时间)
+curl -X POST "https://memo.example.com/?key=<REVIEW_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"slug":"...","grade":"good"}'
+# → {"slug":"...","grade":"good","next_due":"2026-08-07","interval_days":2}
 ```
 
 Worker 功能：
-- `GET /?key=xxx` — 返回一条复习（最少访问优先，均匀分发）
+- `GET /?key=xxx` — 返回 `due_at <= 今天` 的卡片（最少访问优先）
+- `POST /?key=xxx` — 接收评分，推进 SM-2 间隔
 - Cron 每 2 天自动增量同步 flomo 笔记到 D1
 - Ai binding（Kimi K2.6）已配置，暂未启用
 

@@ -7,6 +7,7 @@ Insights are MCP-only — Claude Code reads the prompt + notes and generates ana
 from __future__ import annotations
 
 import json
+import sys
 from typing import Optional
 
 import typer
@@ -552,6 +553,151 @@ def review_cmd(
 
         print(json.dumps(overview, ensure_ascii=False, indent=2))
 
+    finally:
+        db_conn.close()
+
+
+@app.command(name="review-daily")
+def review_daily_cmd(
+    hook_file: str = typer.Option("", "--hooks", "-o", help="Write due queue JSON to file for hook writing"),
+    limit: int = typer.Option(50, "--limit", help="Max due memos to print"),
+):
+    """Show today's spaced-repetition review queue.
+
+    Each due memo is your own original note + tags + state, printed as a
+    numbered JSON list. Write a one-line 'hook' (fresh angle / question)
+    for each, then grade with `flomo review grade <slug> <grade>`.
+    """
+    from src.review import scheduler
+
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+
+    try:
+        created = scheduler.ensure_scheduled(db_conn)
+        if created:
+            print(f"[cyan]Scheduled {created} new memos[/cyan]", file=sys.stderr)
+
+        due = scheduler.get_due(db_conn, limit=limit)
+        if not due:
+            console.print("[green]No memos due today. Run `flomo sync` to pull new notes.[/green]")
+            return
+
+        queue = [
+            {
+                "n": i + 1,
+                "slug": d["slug"],
+                "content": d["content"],
+                "tags": d["tags"],
+                "date": d["date"],
+                "state": d["state"],
+            }
+            for i, d in enumerate(due)
+        ]
+        print(f"{len(queue)} memo(s) due today", file=sys.stderr)
+        print(json.dumps(queue, ensure_ascii=False, indent=2))
+
+        if hook_file:
+            with open(hook_file, "w") as f:
+                json.dump(queue, f, ensure_ascii=False, indent=2)
+            print(f"✓ Queue written to {hook_file}", file=sys.stderr)
+    finally:
+        db_conn.close()
+
+
+@app.command(name="review-grade")
+def review_grade_cmd(
+    slug: str = typer.Argument(..., help="Memo slug (from flomo review-daily)"),
+    grade: str = typer.Argument(..., help="again | hard | good | easy"),
+):
+    """Record a review grade for one memo and advance its schedule.
+
+    again → relearn in 1 day; hard → ×1.3; good → ×2; easy → ×3 (max 60 days).
+    """
+    from src.review import scheduler
+
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+
+    try:
+        result = scheduler.record_grade(db_conn, slug, grade)
+        console.print(
+            f"[green]✓ {result['slug']} → next review {result['due_at']} "
+            f"(interval {result['interval_days']}d, reviewed {result['review_count']}×)[/green]"
+        )
+    except KeyError:
+        console.print(f"[red]No schedule for memo {slug} — run `flomo review-daily` first.[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    finally:
+        db_conn.close()
+
+
+@app.command(name="review-push")
+def review_push_cmd():
+    """Push the local spaced-repetition schedule to D1 (for the worker).
+
+    Replaces the D1 daily_reviews table with the local review_state:
+    one row per scheduled memo, with plain-text content, hook, due_at.
+    The worker serves the next due card from this table.
+    """
+    from src.config import require_d1_database_id
+    from src.backup.d1 import _run_wrangler, _escape_sql_value
+    from src.review.scheduler import to_plain_text
+    import time as _time
+
+    d1_id = require_d1_database_id()
+    db_conn = _get_db().get_connection()
+    _get_db().migrate(db_conn)
+
+    try:
+        console.print("[cyan]Pushing review schedule to D1...[/cyan]")
+        _run_wrangler(d1_id, "DROP TABLE IF EXISTS daily_reviews")
+        _run_wrangler(d1_id, """
+            CREATE TABLE daily_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                content TEXT NOT NULL,
+                hook TEXT NOT NULL DEFAULT '',
+                due_at TEXT NOT NULL,
+                date TEXT NOT NULL,
+                interval_days REAL DEFAULT 1,
+                served_count INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        rows = db_conn.execute("""
+            SELECT r.slug, m.content, m.created_at, r.hook, r.due_at, r.interval_days
+            FROM review_state r
+            JOIN memos m ON m.slug = r.slug
+            ORDER BY r.due_at ASC
+        """).fetchall()
+
+        pushed = 0
+        for r in rows:
+            slug = _escape_sql_value(r["slug"])
+            content = _escape_sql_value(to_plain_text(r["content"]))
+            hook = _escape_sql_value(r["hook"] or "")
+            due = _escape_sql_value(r["due_at"])
+            date_str = _escape_sql_value((r["created_at"] or "")[:10])
+            interval = r["interval_days"] or 1
+            now = str(int(_time.time()))
+            sql = (
+                "INSERT INTO daily_reviews "
+                "(slug, content, hook, due_at, date, interval_days, served_count, created_at) "
+                f"VALUES ('{slug}','{content}','{hook}','{due}','{date_str}',"
+                f"{interval},0,'{now}')"
+            )
+            _run_wrangler(d1_id, sql)
+            pushed += 1
+            if pushed % 20 == 0:
+                print(f"  Pushed {pushed}/{len(rows)}...", file=sys.stderr)
+            _time.sleep(0.3)
+
+        console.print(f"[green]✓ Pushed {pushed} review cards to D1[/green]")
     finally:
         db_conn.close()
 

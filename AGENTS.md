@@ -81,11 +81,12 @@ flomo backup                 # 增量推送至 Cloudflare D1
 ### 每日复习
 → 参考 `.claude/skills/review.md`
 ```
-flomo review -n 50 > groups.json    # 生成笔记分组
-# Claude 写复习内容 → reviews.json
-flomo review --push --json reviews.json  # 推送到 D1
+flomo sync
+flomo review-daily                # 间隔重复:今天到期的笔记
+# Claude 为每条写「钩子」→ 逐条 flomo review grade <slug> <grade>
+flomo review-push                 # 推送到 D1(供 Worker 用)
 ```
-Worker 部署在 memo.example.com，每天随机返回一条。
+Worker 部署在 memo.example.com，按 due_at 返回到期卡片。
 
 ## 提交前检查
 
