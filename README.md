@@ -96,18 +96,15 @@ flomo backup                   # 增量推送到 D1（仅推送更新的笔记�
 ### 每日复习
 
 ```bash
-flomo sync                         # 先同步最新笔记
-flomo review-daily -o queue.json   # 间隔重复:今天到期的笔记(你的原文)
-# Claude 为每条到期笔记写一条「钩子」→ 回填 queue.json
-flomo review grade <slug> good     # 逐条评分,系统安排下次复习时间
-flomo review-push                  # 把复习节奏推送到 D1(供 Worker 用)
+flomo sync            # 先同步最新笔记
+flomo review-push     # 清理笔记内容(去 HTML/去标签) → 推送到 D1
 ```
 
-复习节奏由简化 SM-2 间隔重复决定:`again`→1 天、`hard`→×1.3、`good`→×2、`easy`→×3(封顶 60 天),新笔记在 30 天内逐步引入。
+复习按**频率轮转**:Worker 每次请求返回推送次数最少的卡片,推过一次就计数+1,卡片不会连续重复。没有到期时间、没有评分——复习频率就是你的访问频率,想看就看。
 
-**主题回顾**(可选):`flomo review` 两阶段深潜,Claude 从候选池挑关联笔记写主题回顾 → `flomo review --push --json reviews.json`(会重建 D1 的 `daily_reviews` 表)。
+卡片内容 = 你的笔记原文(纯整理版:去 HTML、按行展示、去 `#标签`),**不是 AI 生成的点评**。
 
-复习通过 Cloudflare Worker 在 `memo.example.com` 提供,每次返回一条到期的复习。部署与验证 → 见下方「Cloudflare Worker」章节。
+复习通过 Cloudflare Worker 在 `memo.example.com` 提供。部署与验证 → 见下方「Cloudflare Worker」章节。
 
 详细流程 → 见 `.claude/skills/review.md`
 
@@ -201,8 +198,7 @@ src/
 ├── importers/           # 微信读书导入
 │   └── weread.py        # Skills API 调用 + 书评匹配 + 去重
 ├── review/              # 每日复习
-│   ├── engine.py        # 主题回顾:4 种关联策略（同标签/同书/近时间/双标签）
-│   └── scheduler.py     # 间隔重复调度:SM-2 排期/到期队列/评分
+│   └── scheduler.py     # 卡片内容清理:HTML → 纯文本,去标签
 ├── tags/                # 标签体系
 │   ├── taxonomy.py      # 分类体系定义
 │   └── classifier.py    # LLM 打标 prompt 生成
@@ -223,7 +219,7 @@ docs/                     # 文档
 
 ## Cloudflare Worker（每日复习）
 
-部署在 `memo.example.com`，按 `due_at` 返回一条到期的复习卡片。Worker 从 D1 的 `daily_reviews` 表读取到期卡片，该表由本地的 `flomo review-push` 从 SQLite 的 `review_state` 排期生成并推送。
+部署在 `memo.example.com`，按**频率轮转**返回复习卡片:每次请求返回推送次数最少的卡片,推过一次计数+1。Worker 从 D1 的 `daily_reviews` 表读取卡片,该表由本地的 `flomo review-push` 从 SQLite 的 `memos` 表清理(去 HTML/去标签)后生成并推送。
 
 ```bash
 cd worker
@@ -236,25 +232,18 @@ npx wrangler secret put FLOMO_TOKEN  # flomo 同步用
 npx wrangler deploy
 ```
 
-本地复习节奏 → 推到 D1 → Worker 服务:
+本地笔记 → 清理 → 推到 D1 → Worker 轮转:
 
 ```bash
-flomo review-push      # 本地 review_state → D1 daily_reviews(重建表)
+flomo review-push      # memos → D1 daily_reviews(重建表,内容已清理)
 
-# 访问(返回今天到期的一条卡片)
+# 访问(返回一张推送最少的卡片)
 curl "https://memo.example.com/?key=<REVIEW_KEY>"
-# → {"slug": "...", "content": "...", "hook": "...", "due": "2026-08-05"}
-
-# 评分(推进下次复习时间)
-curl -X POST "https://memo.example.com/?key=<REVIEW_KEY>" \
-  -H "Content-Type: application/json" \
-  -d '{"slug":"...","grade":"good"}'
-# → {"slug":"...","grade":"good","next_due":"2026-08-07","interval_days":2}
+# → {"slug": "...", "content": "...", "date": "2026-08-05", "served": 3}
 ```
 
 Worker 功能：
-- `GET /?key=xxx` — 返回 `due_at <= 今天` 的卡片（最少访问优先）
-- `POST /?key=xxx` — 接收评分，推进 SM-2 间隔
+- `GET /?key=xxx` — 返回 `served_count` 最小的卡片（均匀轮转，不重复）
 - Cron 每 2 天自动增量同步 flomo 笔记到 D1
 - Ai binding（Kimi K2.6）已配置，暂未启用
 

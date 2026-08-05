@@ -1,8 +1,7 @@
-"""Tests for the review-push to D1 (spaced-repetition cards)."""
+"""Tests for the review-push to D1 (frequency-rotation cards)."""
 
 from __future__ import annotations
 
-from src.review import scheduler
 from src.sync.exporter import _upsert_memo
 from tests.conftest import make_memo
 
@@ -25,17 +24,16 @@ def _fake_run(sql):
 
 
 def test_review_push_schema_and_rows(tmp_conn, monkeypatch):
-    """review-push emits DROP, CREATE with new columns, and one INSERT per memo."""
+    """review-push emits DROP, CREATE with served_count, and one INSERT per memo."""
     _upsert_memo(tmp_conn, make_memo(
         slug="push-1", content="<p>#效率 两分钟法则</p>",
+        tags=[{"name": "效率"}],
         created_at=1700000000000, updated_at=1700000000000,
     ))
     _upsert_memo(tmp_conn, make_memo(
         slug="push-2", content="<p>焦虑是自由的眩晕</p>",
         created_at=1700000000000, updated_at=1700000000000,
     ))
-    scheduler.ensure_scheduled(tmp_conn)
-    scheduler.set_hook(tmp_conn, "push-1", "还在用吗?")
 
     calls = []
     monkeypatch.setattr(
@@ -48,7 +46,7 @@ def test_review_push_schema_and_rows(tmp_conn, monkeypatch):
     )
 
     # Point review_push_cmd at the temp DB instead of the real config.toml one.
-    from src.main import review_push_cmd, _get_db
+    from src.main import review_push_cmd
     monkeypatch.setattr("src.main._get_db", lambda: _DummyDb(tmp_conn))
 
     review_push_cmd()
@@ -58,16 +56,16 @@ def test_review_push_schema_and_rows(tmp_conn, monkeypatch):
 
     assert any("DROP TABLE IF EXISTS daily_reviews" in c for c in ddl)
     create = [c for c in ddl if "CREATE TABLE" in c][0]
-    # New spaced-repetition columns present
-    assert "slug TEXT NOT NULL UNIQUE" in create
-    assert "due_at TEXT NOT NULL" in create
-    assert "hook TEXT NOT NULL DEFAULT ''" in create
+    # New frequency-rotation columns present; no scheduling columns
+    assert "served_count" in create
+    assert "due_at" not in create
+    assert "interval_days" not in create
 
     assert len(inserts) == 2
     push1 = [i for i in inserts if "'push-1'" in i][0]
-    # Plain text content, not HTML
+    # Tags stripped from content, no raw HTML
     assert "<p>" not in push1
+    assert "#效率" not in push1
     assert "两分钟法则" in push1
-    assert "还在用吗?" in push1  # hook embedded
-    # HTML escaped away, no raw markup in the SQL
-    assert "&#" not in push1
+    # served_count starts at 0
+    assert ",0," in push1

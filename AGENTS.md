@@ -82,11 +82,9 @@ flomo backup                 # 增量推送至 Cloudflare D1
 → 参考 `.claude/skills/review.md`
 ```
 flomo sync
-flomo review-daily                # 间隔重复:今天到期的笔记
-# Claude 为每条写「钩子」→ 逐条 flomo review grade <slug> <grade>
-flomo review-push                 # 推送到 D1(供 Worker 用)
+flomo review-push                 # 清理笔记内容 → 推送到 D1
 ```
-Worker 部署在 memo.example.com，按 due_at 返回到期卡片。
+Worker 部署在 memo.example.com，按频率轮转返回卡片(推过次数最少优先)。
 
 ## 提交前检查
 

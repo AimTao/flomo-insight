@@ -7,7 +7,6 @@ Tables:
   memos_fts   — FTS5 full-text search index
   sync_state  — incremental sync cursor
   weread_imports — WeRead import dedup
-  review_state — spaced-repetition schedule per memo
 """
 
 from __future__ import annotations
@@ -118,11 +117,18 @@ CREATE TABLE IF NOT EXISTS review_state (
 CREATE INDEX IF NOT EXISTS idx_review_state_due ON review_state(due_at);
 """
 
+# V3: review moved to a frequency-rotation worker (no scheduling, no
+# grading). The review_state table is no longer used — drop it.
+SCHEMA_V3 = """
+DROP TABLE IF EXISTS review_state;
+"""
+
 MIGRATIONS: dict[int, str] = {
     1: SCHEMA_V1,
     2: SCHEMA_V2,
+    3: SCHEMA_V3,
 }
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 @dataclass
