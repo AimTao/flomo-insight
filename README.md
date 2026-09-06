@@ -272,7 +272,6 @@ worker/               # Worker（scheduled + 复习 API）
 docs/                 # PRD、TODO
 AGENTS.md             # 分层架构 + Agent 手册
 ```
-```
 
 ---
 
