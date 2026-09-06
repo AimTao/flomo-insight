@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.insight.engine import generate_insight
-from src.sync.exporter import _upsert_memo
+from flomo_insight.insight.engine import generate_insight
+from flomo_insight.sync.exporter import _upsert_memo
 from tests.conftest import make_memo
 
 

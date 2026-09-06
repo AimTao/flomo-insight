@@ -5,14 +5,14 @@ import unittest.mock
 
 import pytest
 
-from src.importers.weread import (
+from flomo_insight.importers.weread import (
     fetch_reviewed_highlights,
     mark_imported,
     build_weread_stats,
     auto_import,
 )
-from src.tags.classifier import build_wearead_import_prompt
-from src.db import DatabaseManager
+from flomo_insight.tags.classifier import build_wearead_import_prompt
+from flomo_insight.db import DatabaseManager
 
 
 def _mock_weread_client(books_with_highlights):
@@ -183,7 +183,7 @@ def test_auto_import_creates_memos(tmp_db, weread_data):
     wclient = _mock_weread_client(weread_data)
     fclient = _mock_flomo_client()
 
-    with unittest.mock.patch("src.importers.weread.time.sleep"):
+    with unittest.mock.patch("flomo_insight.importers.weread.time.sleep"):
         result = auto_import(wclient, fclient, conn, batch_size=10)
 
     assert result["imported"] == 1
@@ -210,7 +210,7 @@ def test_auto_import_with_extra_tag(tmp_db, weread_data):
     fclient = _mock_flomo_client()
 
     classifier = lambda text, title: ["认知"]
-    with unittest.mock.patch("src.importers.weread.time.sleep"):
+    with unittest.mock.patch("flomo_insight.importers.weread.time.sleep"):
         auto_import(wclient, fclient, conn, batch_size=10, classifier=classifier)
 
     assert "微信读书" in fclient.created[0]["tags"]
@@ -227,7 +227,7 @@ def test_auto_import_skips_already_imported(tmp_db, weread_data):
     wclient = _mock_weread_client(weread_data)
     fclient = _mock_flomo_client()
 
-    with unittest.mock.patch("src.importers.weread.time.sleep"):
+    with unittest.mock.patch("flomo_insight.importers.weread.time.sleep"):
         result = auto_import(wclient, fclient, conn, batch_size=10)
 
     assert result["imported"] == 0
@@ -247,7 +247,7 @@ def test_auto_import_handles_create_error(tmp_db, weread_data):
     fclient.__exit__ = MagicMock(return_value=None)
     fclient.create_memo = MagicMock(side_effect=Exception("flomo down"))
 
-    with unittest.mock.patch("src.importers.weread.time.sleep"):
+    with unittest.mock.patch("flomo_insight.importers.weread.time.sleep"):
         result = auto_import(wclient, fclient, conn, batch_size=10)
 
     assert result["imported"] == 0

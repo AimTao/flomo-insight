@@ -6,7 +6,7 @@ import pytest
 import httpx
 from unittest.mock import MagicMock, patch
 
-from src.api.client import FlomoClient, FlomoAPIError, FlomoAuthError
+from flomo_insight.api.client import FlomoClient, FlomoAPIError, FlomoAuthError
 
 
 def _make_client():
@@ -36,6 +36,27 @@ def test_auth_error_not_retried():
     assert "expired" in str(exc_info.value).lower() or "token" in str(exc_info.value).lower()
 
 
+def test_request_throttle_enforces_min_interval():
+    """Consecutive flomo calls must wait MIN_REQUEST_INTERVAL."""
+    from flomo_insight.api import client as client_mod
+
+    client = _make_client()
+    ok = httpx.Response(
+        200, json={"code": 0, "data": []},
+        request=httpx.Request("GET", "https://flomoapp.com/api/v1/memo/updated/")
+    )
+    sleeps = []
+
+    with patch.object(client._client, "request", return_value=ok):
+        with patch("flomo_insight.api.client.time.sleep", side_effect=lambda s: sleeps.append(s)):
+            with patch("flomo_insight.api.client.time.monotonic", side_effect=[0.0, 0.1, 5.0, 5.0]):
+                client.get_updated(limit=1)
+                client.get_updated(limit=1)
+
+    assert sleeps, "expected throttle sleep between requests"
+    assert any(s >= client_mod.MIN_REQUEST_INTERVAL * 0.5 for s in sleeps)
+
+
 def test_network_error_retries_then_raises():
     """Network timeouts should retry MAX_RETRIES times then raise."""
     client = _make_client()
@@ -46,7 +67,7 @@ def test_network_error_retries_then_raises():
         raise httpx.TimeoutException("timed out")
 
     with patch.object(client._client, "request", side_effect=fake_request):
-        with patch("src.api.client.time.sleep"):  # skip real sleeps
+        with patch("flomo_insight.api.client.time.sleep"):  # skip real sleeps
             with pytest.raises(httpx.TimeoutException):
                 client.get_updated(limit=1)
 
@@ -75,7 +96,7 @@ def test_success_after_one_retry():
         return r
 
     with patch.object(client._client, "request", side_effect=fake_request):
-        with patch("src.api.client.time.sleep"):
+        with patch("flomo_insight.api.client.time.sleep"):
             data = client.get_updated(limit=1)
 
     assert call_count["n"] == 2
@@ -101,7 +122,7 @@ def test_rate_limit_5xx_retries():
         return r
 
     with patch.object(client._client, "request", side_effect=fake_request):
-        with patch("src.api.client.time.sleep"):
+        with patch("flomo_insight.api.client.time.sleep"):
             data = client.get_updated(limit=1)
 
     assert data["code"] == 0

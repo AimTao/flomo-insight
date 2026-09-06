@@ -9,26 +9,18 @@ from typing import Any
 
 import pytest
 
-from src.db import DatabaseManager
+from flomo_insight.db import DatabaseManager
 
 
-# ── Known-correct sign fixture (captured from a real flomo web request) ──────
-# URL: /api/v1/memo/updated/?limit=200&latest_updated_at=1785153897
-#      &latest_slug=MTQ0NzU1NDQz&tz=8:0&timestamp=1785203012
-#      &api_key=flomo_web&app_version=4.0&platform=web&webp=1
-#      &sign=abdcd080f48134d9f2a0459c61d11dab
-KNOWN_SIGN_PARAMS = {
-    "limit": "200",
-    "latest_updated_at": "1785153897",
-    "latest_slug": "MTQ0NzU1NDQz",
-    "tz": "8:0",
-    "timestamp": "1785203012",
-    "api_key": "flomo_web",
-    "app_version": "4.0",
-    "platform": "web",
-    "webp": "1",
-}
-KNOWN_SIGN = "abdcd080f48134d9f2a0459c61d11dab"
+# ── Synthetic memos (clearly fake content, never real notes) ─────────────────
+# Signing tests use a synthetic salt (see test_sign.py). Vendor signing
+# constants are not stored in the repository.
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_sign_salt(monkeypatch):
+    """Never require a vendor salt in unit tests."""
+    monkeypatch.setenv("FLOMO_SIGN_SALT", "unit-test-salt-not-vendor")
 
 
 @pytest.fixture

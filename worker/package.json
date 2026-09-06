@@ -1,0 +1,8 @@
+{
+  "name": "flomo-review-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/sign.test.js test/flomo.test.js"
+  }
+}

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.search.engine import search, recent_memos, get_tags, db_stats
-from src.sync.exporter import _upsert_memo
+from flomo_insight.search.engine import search, recent_memos, get_tags, db_stats
+from flomo_insight.sync.exporter import _upsert_memo
 from tests.conftest import make_memo
 
 

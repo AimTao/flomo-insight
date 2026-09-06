@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.review.scheduler import (
+from flomo_insight.review.scheduler import (
     dedupe_cards,
     strip_known_tags,
     to_plain_text,

@@ -2,16 +2,27 @@
 # Copy this file to config.toml and fill in your tokens:
 #   cp config.toml.example config.toml
 
-# flomo API token — Chrome F12 → Network → /api/ → Authorization → value after "Bearer "
+# flomo API token — Chrome DevTools → Network → any /api/ request
+# → Request Headers → Authorization: Bearer <token>
+# (the value after "Bearer ")
 flomo_token = ""
 
 # WeRead Skills API key — https://weread.qq.com/r/weread-skills (optional)
 weread_key = ""
 
-# Database path
+# Local SQLite path (insight / tagging data source)
 db_path = "data/flomo.db"
 
-# Cloudflare D1 backup (optional)
-# Create a D1 database: npx wrangler d1 create flomo-backup
-# Auth uses macOS Keychain (npx wrangler login).
+# Cloudflare D1 database UUID (optional — local backup / review-push)
+# Must match the database_id in worker/wrangler.toml
+# Create: npx wrangler d1 create flomo
 d1_database_id = ""
+
+# Worker review API key (optional — only if local tools call the review URL)
+# Must match the REVIEW_KEY secret on the Worker
+review_key = ""
+
+# flomo request signing salt (NOT a personal token).
+# Extract from the flomo web client JS bundle (shared by all users).
+# Also required as Worker secret FLOMO_SIGN_SALT for cron sync.
+flomo_sign_salt = ""

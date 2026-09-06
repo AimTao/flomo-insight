@@ -7,11 +7,11 @@ import unittest.mock
 import pytest
 import subprocess
 
-from src.backup.d1 import (
+from flomo_insight.backup.d1 import (
     backup_to_d1, _run_wrangler, D1BackupError,
     _escape_sql_value, _get_latest_backed_up_at, _create_schema,
 )
-from src.sync.exporter import _upsert_memo
+from flomo_insight.sync.exporter import _upsert_memo
 from tests.conftest import make_memo
 
 
@@ -76,8 +76,8 @@ def test_backup_creates_schema_then_inserts(memos_db):
             return [{"results": [{"m": None}]}]  # no existing data
         return [{"results": []}]
 
-    with unittest.mock.patch("src.backup.d1._run_wrangler", side_effect=fake_run):
-        with unittest.mock.patch("src.backup.d1.time.sleep"):
+    with unittest.mock.patch("flomo_insight.backup.d1._run_wrangler", side_effect=fake_run):
+        with unittest.mock.patch("flomo_insight.backup.d1.time.sleep"):
             result = backup_to_d1(memos_db, DB_ID, batch_size=50)
 
     assert result["backed_up"] == 5
@@ -87,6 +87,43 @@ def test_backup_creates_schema_then_inserts(memos_db):
     assert calls[2]["is_insert"]
 
 
+def test_backup_includes_tags_column(memos_db):
+    """D1 memos insert carries tags from local memo_tags."""
+    from flomo_insight.sync.exporter import _upsert_memo
+    _upsert_memo(memos_db, make_memo(
+        slug="bk-tag", content="<p>#AI x</p>", tags=[{"name": "AI"}],
+        created_at=1700000009999, updated_at=1700000009999,
+    ))
+    sqls = []
+
+    def fake_run(db_id, sql):
+        sqls.append(sql)
+        if "SELECT MAX" in sql:
+            return [{"results": [{"m": None}]}]
+        return [{"results": []}]
+
+    with unittest.mock.patch("flomo_insight.backup.d1._run_wrangler", side_effect=fake_run):
+        with unittest.mock.patch("flomo_insight.backup.d1.time.sleep"):
+            backup_to_d1(memos_db, DB_ID, batch_size=50)
+
+    inserts = [s for s in sqls if "INSERT INTO memos" in s]
+    assert inserts
+    joined = "\n".join(inserts)
+    assert "tags" in joined
+    assert "'AI'" in joined
+
+
+def test_apply_lookback_shifts_watermark():
+    from flomo_insight.backup.d1 import _apply_lookback, BACKUP_LOOKBACK_SECONDS
+    from datetime import datetime, timedelta, timezone
+
+    wm = "2026-01-02T00:00:00+00:00"
+    out = _apply_lookback(wm)
+    dt_in = datetime.fromisoformat(wm)
+    dt_out = datetime.fromisoformat(out)
+    assert (dt_in - dt_out).total_seconds() == BACKUP_LOOKBACK_SECONDS
+
+
 def test_backup_skips_if_nothing_new(memos_db):
     """All memos already in D1 → backs up 0."""
     def fake_run(db_id, sql):
@@ -94,7 +131,7 @@ def test_backup_skips_if_nothing_new(memos_db):
             return [{"results": [{"m": "2099-01-01T00:00:00+00:00"}]}]
         return [{"results": []}]
 
-    with unittest.mock.patch("src.backup.d1._run_wrangler", side_effect=fake_run):
+    with unittest.mock.patch("flomo_insight.backup.d1._run_wrangler", side_effect=fake_run):
         result = backup_to_d1(memos_db, DB_ID, batch_size=50)
 
     assert result["backed_up"] == 0
@@ -119,8 +156,8 @@ def test_backup_batches_large_sets(tmp_conn):
             return [{"results": [{"m": None}]}]
         return [{"results": []}]
 
-    with unittest.mock.patch("src.backup.d1._run_wrangler", side_effect=fake_run):
-        with unittest.mock.patch("src.backup.d1.time.sleep"):
+    with unittest.mock.patch("flomo_insight.backup.d1._run_wrangler", side_effect=fake_run):
+        with unittest.mock.patch("flomo_insight.backup.d1.time.sleep"):
             result = backup_to_d1(tmp_conn, DB_ID, batch_size=5)
 
     assert result["backed_up"] == 12

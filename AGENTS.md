@@ -1,109 +1,68 @@
 # AGENTS.md — flomo-insight
 
-AI-powered insight engine for flomo (浮墨笔记) + WeRead (微信读书) import.
+新开对话的 Agent 入口。**用法与架构见 `README.md`；产品边界见 `docs/PRD.md`。**
 
-**All insights are LLM-driven.** No clustering, no embeddings, no pre-analysis.
-Data pipeline: `flomo sync` pulls raw notes into SQLite. MCP tools fetch notes
-+ wrap them with a system prompt. Claude Code reads and generates the insight.
+动手前：读红线 → 读对应 `.claude/skills/` → 再改代码/跑 CLI。
 
-## Project structure
+---
 
-```
-src/                  # Python package
-├── main.py           # CLI (Typer)
-├── mcp_server.py     # MCP Server (FastMCP) — 9 tools
-├── config.py         # Config from config.toml
-├── api/              # flomo HTTP client + MD5 sign
-├── sync/             # Paginated memo sync
-├── search/           # FTS5 full-text search
-├── insight/          # LLM-driven insight engine (11 types)
-├── importers/        # WeRead highlight+review import
-└── db/               # SQLite schema + migrations
-config.toml.example   # Template — user copies to config.toml
-config.toml           # Secrets + settings (gitignored)
-data/                 # Database (gitignored)
-```
+## 红线
 
-## Setup
+1. **先 flomo，后副本**：写操作成功后再写本地 SQLite / D1。  
+2. **限速**：打 flomo 必须节流（本地 ≥1.2s，写更长；Worker 分页 sleep）。  
+3. **LLM 产物写入前征得用户同意**（洞察、改标签等）。  
+4. **不要加 MCP**（无 `fastmcp` / `mcp_server`）。  
+5. **D1 只保留最新表结构**；旧表 DROP 重建。  
+6. **不提交密钥**：`config.toml`、真实 `worker/wrangler.toml`、`data/`、`*.db`。  
+7. **Python 不写洞察结论**；`flomo insight` 只出 prompt + 笔记。
+8. **签名盐不入库**：`flomo_sign_salt` / secret `FLOMO_SIGN_SALT` 从 flomo 网页 bundle 自行配置。
 
-```bash
-uv sync
-cp config.toml.example config.toml
-# Edit config.toml — set flomo_token
-flomo sync
-```
+---
 
-## Architecture decision: No clustering
+## 改哪里
 
-For datasets under ~200 notes, clustering is actively harmful — it obscures
-connections that an LLM can find by reading the raw text. Insight engine
-fetches notes directly from SQLite, wraps them with a system prompt, and
-Claude Code does all the reasoning.
+| 要改 | 位置 |
+|------|------|
+| CLI | `flomo_insight/main.py` |
+| flomo HTTP / 签名 / 限速 | `flomo_insight/api/` |
+| 同步、本地写镜像 | `flomo_insight/sync/` |
+| 洞察 prompt | `flomo_insight/insight/` |
+| 打标 / `tags_llm_at` | `flomo_insight/tags/` + `db/`（v4） |
+| 复习卡推 D1 | `flomo_insight/review/push.py` |
+| backup → D1 | `flomo_insight/backup/d1.py` |
+| Worker | `worker/review-worker.js`、`worker/lib/` |
+| Agent 行为 | `.claude/skills/*/SKILL.md` |
 
-## MCP Tools (9)
+本地库与 D1 表结构见 README「数据模型」。冲突：`updated_at` 新者胜。
 
-| Tool | Purpose |
-|------|---------|
-| `flomo_search` | FTS5 search + tag filter |
-| `flomo_create` | Create memo (cloud) |
-| `flomo_sync` | Sync from flomo API |
-| `flomo_insight` | LLM-driven insight (11 types) |
-| `flomo_recent` | Recent memos |
-| `flomo_tags` | Tag list + counts |
-| `flomo_import_weread` | Fetch WeRead highlights+reviews |
-| `flomo_weread_mark_imported` | Dedup tracking |
-| `flomo_weread_stats` | Import stats |
+---
 
-## 常用工作流
-
-### 微信读书导入
-→ 参考 `.claude/skills/tagging.md`
-```
-flomo import weread          # 拉取划线+书评，生成 LLM 导入 prompt
-# 然后逐条打标签 → flomo_create → flomo_weread_mark_imported
-```
-
-### 洞察分析
-→ 参考 `.claude/skills/insight.md`
-```
-flomo sync                   # 先同步
-flomo insight topics         # 或 connections / cbt / inversion 等
-# CLI 输出 prompt+笔记原文，直接基于此写洞察
-```
-
-### 备份到 D1
-→ 参考 `.claude/skills/backup.md`
-```
-flomo sync                   # 先同步
-flomo backup                 # 增量推送至 Cloudflare D1
-```
-
-### 每日复习
-→ 参考 `.claude/skills/review.md`
-```
-flomo sync
-flomo review-push                 # 清理笔记内容 → 推送到 D1
-```
-Worker 部署在 memo.example.com，按频率轮转返回卡片(推过次数最少优先)。
-
-## 提交前检查
-
-提交代码之前必须确认不包含以下内容：
-
-- `config.toml` 中的 flomo_token / weread_key / d1_api_token
-- 任何硬编码的 Bearer token / API key / password
-- 调试产物：`.playwright-mcp/`、截图 `.png`、临时脚本 `/tmp/`
-- `data/flomo.db` — 数据库文件（已 gitignored）
+## 验证
 
 ```bash
-# 快速检查改动中是否含敏感词
-git diff --cached | grep -iE 'token|secret|key|password|Bearer' | grep -vE 'require_token|require_weread|_mask_token|api_key=flomo|config\.|\.example'
-# 应返回空
+uv run pytest -q
+cd worker && npm test
 ```
 
-**调试产物处理**：用 `>> .gitignore` 追加，然后 `git add .gitignore && git commit -m "chore: gitignore debug artifacts"`
+命令清单、部署与 curl 示例：**只看 README**，本文不重复。
 
-## Security
+---
 
-config.toml and data/ are gitignored. No secrets in source code.
-Tests use synthetic data only.
+## Skills
+
+| 目录 | 用途 |
+|------|------|
+| `.claude/skills/insight/` | 洞察；写入前确认 |
+| `.claude/skills/tagging/` | 仅 `tags_llm_at` 为空的笔记；方案→确认→改→`tags-optimized` |
+| `.claude/skills/review/` | review-push / insight-push |
+| `.claude/skills/backup/` | 本地 backup 与 Worker cron |
+
+---
+
+## 提交前
+
+```bash
+git diff --cached | grep -iE 'Bearer |wrk-|REVIEW_KEY|flomo_token' \
+  | grep -vE 'require_|_mask_|flomo_token|weread_key|REVIEW_KEY|FLOMO_TOKEN|config\.|\.example|Bearer <|Bearer \$\{'
+# 应为空
+```

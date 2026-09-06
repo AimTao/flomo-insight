@@ -19,6 +19,7 @@ Thumbs.db
 # Secrets & user data — NEVER commit
 config.toml
 data/
+*.db
 .wrangler/
 .playwright-mcp/
 flomo-order.png

@@ -2,15 +2,26 @@ name = "flomo-review"
 main = "review-worker.js"
 compatibility_date = "2025-01-01"
 workers_dev = true
-route = { pattern = "<your-domain>", zone_name = "<your-zone>" }
+# Optional custom domain:
+# route = { pattern = "memo.example.com", zone_name = "example.com" }
 
 [[d1_databases]]
 binding = "DB"
-database_name = "flomo-backup"
+database_name = "flomo"
+# Must match d1_database_id in local config.toml
 database_id = "<your-d1-database-id>"
 
-[ai]
-binding = "AI"
-
+# Cloudflare Cron Triggers (UTC). Deploy with `npx wrangler deploy` to apply.
+# Default: weekly flomo → D1 (Monday 02:23 UTC).
+#   "23 2 * * 1"   → every Monday 02:23 UTC
+#   "17 1 * * *"   → daily 01:17 UTC
+# Handler: scheduled() in review-worker.js — incremental flomo → D1.
+# weread import only runs if WEREAD_KEY is set (optional).
 [triggers]
-crons = ["0 0 */2 * *"]
+crons = ["23 2 * * 1"]
+
+# Secrets are NOT stored here. Set with:
+#   npx wrangler secret put REVIEW_KEY         # public review API key (required)
+#   npx wrangler secret put FLOMO_TOKEN        # same value as local flomo_token
+#   npx wrangler secret put FLOMO_SIGN_SALT    # flomo web client signing salt
+#   npx wrangler secret put WEREAD_KEY         # optional WeRead auto-import

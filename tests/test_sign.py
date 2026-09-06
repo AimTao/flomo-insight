@@ -1,54 +1,77 @@
-"""Tests for MD5 signature builder."""
+"""Tests for MD5 signature builder (synthetic salt — no vendor constant)."""
 
-from src.api.sign import SALT, sign_params, build_memo_params
+from __future__ import annotations
+
+import hashlib
+
+import pytest
+
+from flomo_insight.api.sign import (
+    MissingSignSalt,
+    build_memo_params,
+    get_sign_salt,
+    sign_params,
+)
+
+TEST_SALT = "unit-test-salt-not-vendor"
 
 
-def test_sign_matches_known_real_request():
-    """The signature must match a sign captured from a real flomo web request."""
-    from tests.conftest import KNOWN_SIGN, KNOWN_SIGN_PARAMS
+def _expected_sign(params: dict[str, str], salt: str) -> str:
+    ordered = sorted(params.items())
+    raw = "&".join(f"{k}={v}" for k, v in ordered) + salt
+    return hashlib.md5(raw.encode()).hexdigest()
 
-    signed = sign_params(dict(KNOWN_SIGN_PARAMS))
-    assert signed["sign"] == KNOWN_SIGN, (
-        f"Expected {KNOWN_SIGN}, got {signed['sign']}. "
-        "If flomo rotated the salt, update SALT in src/api/sign.py."
+
+def test_sign_matches_md5_of_sorted_params_plus_salt():
+    params = {"a": "1", "b": "2"}
+    signed = sign_params(dict(params), salt=TEST_SALT)
+    assert signed["sign"] == _expected_sign(params, TEST_SALT)
+
+
+def test_get_sign_salt_prefers_env(monkeypatch):
+    monkeypatch.setenv("FLOMO_SIGN_SALT", "env-salt-value-32chars-aaaaaaaa")
+    assert get_sign_salt() == "env-salt-value-32chars-aaaaaaaa"
+
+
+def test_get_sign_salt_raises_when_missing(monkeypatch):
+    monkeypatch.delenv("FLOMO_SIGN_SALT", raising=False)
+    monkeypatch.setattr(
+        "flomo_insight.config.load_config",
+        lambda: type("C", (), {"flomo_sign_salt": ""})(),
     )
+    with pytest.raises(MissingSignSalt):
+        get_sign_salt()
 
 
 def test_sign_is_deterministic():
-    """Same input → same sign."""
     params = {"a": "1", "b": "2"}
-    s1 = sign_params(dict(params))
-    s2 = sign_params(dict(params))
+    s1 = sign_params(dict(params), salt=TEST_SALT)
+    s2 = sign_params(dict(params), salt=TEST_SALT)
     assert s1["sign"] == s2["sign"]
 
 
 def test_sign_independent_of_param_order():
-    """Sign must be order-independent (sorted internally)."""
-    a = sign_params({"a": "1", "b": "2"})
-    b = sign_params({"b": "2", "a": "1"})
+    a = sign_params({"a": "1", "b": "2"}, salt=TEST_SALT)
+    b = sign_params({"b": "2", "a": "1"}, salt=TEST_SALT)
     assert a["sign"] == b["sign"]
 
 
 def test_sign_changes_with_value():
-    """Different value → different sign."""
-    a = sign_params({"a": "1"})
-    b = sign_params({"a": "2"})
+    a = sign_params({"a": "1"}, salt=TEST_SALT)
+    b = sign_params({"a": "2"}, salt=TEST_SALT)
     assert a["sign"] != b["sign"]
 
 
 def test_sign_appended_not_replaced():
-    """sign_params returns a copy with 'sign' added, original params intact."""
     params = {"a": "1"}
-    signed = sign_params(params)
+    signed = sign_params(params, salt=TEST_SALT)
     assert "sign" in signed
     assert signed["a"] == "1"
-    # original dict unchanged
     assert "sign" not in params
 
 
 def test_build_memo_params_has_required_fields():
-    """build_memo_params must include all fields flomo expects + sign."""
-    p = build_memo_params(limit=200)
+    p = build_memo_params(limit=200, salt=TEST_SALT)
     required = {"limit", "tz", "timestamp", "api_key", "app_version", "platform", "webp", "sign"}
     assert required.issubset(p.keys())
     assert p["limit"] == "200"
@@ -56,16 +79,9 @@ def test_build_memo_params_has_required_fields():
 
 
 def test_build_memo_params_pagination_fields():
-    """Pagination cursor fields added only when provided."""
-    p = build_memo_params(latest_slug="SLUG", latest_updated_at="123")
+    p = build_memo_params(latest_slug="SLUG", latest_updated_at="123", salt=TEST_SALT)
     assert p["latest_slug"] == "SLUG"
     assert p["latest_updated_at"] == "123"
-
-    p2 = build_memo_params()
+    p2 = build_memo_params(salt=TEST_SALT)
     assert "latest_slug" not in p2
     assert "latest_updated_at" not in p2
-
-
-def test_salt_is_nonempty_constant():
-    """Guard against accidentally clearing the salt."""
-    assert SALT and len(SALT) == 32

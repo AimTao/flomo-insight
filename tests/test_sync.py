@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.sync.exporter import sync, _upsert_memo, _parse_tags_from_memo, _ts_to_iso
-from src.db import DatabaseManager
+from flomo_insight.sync.exporter import sync, _upsert_memo, _parse_tags_from_memo, _ts_to_iso
+from flomo_insight.db import DatabaseManager
 from tests.conftest import make_memo
 
 
@@ -207,7 +207,7 @@ def test_sync_removes_trashed_memo(tmp_db):
     from the local store, not just skipped."""
     # Pre-seed a memo that will be trashed on the next sync
     conn = tmp_db.get_connection()
-    from src.sync.exporter import _upsert_memo
+    from flomo_insight.sync.exporter import _upsert_memo
     _upsert_memo(conn, make_memo(slug="doomed", content="<p>这条要被删</p>"))
     conn.commit()
     conn.close()
@@ -230,7 +230,7 @@ def test_sync_removes_memo_with_deleted_at_but_content(tmp_db):
     """A memo with deleted_at set (recent trash) is removed even though flomo
     still returns its content."""
     conn = tmp_db.get_connection()
-    from src.sync.exporter import _upsert_memo
+    from flomo_insight.sync.exporter import _upsert_memo
     _upsert_memo(conn, make_memo(slug="doomed2", content="<p>这条也被删</p>"))
     conn.commit()
     conn.close()
